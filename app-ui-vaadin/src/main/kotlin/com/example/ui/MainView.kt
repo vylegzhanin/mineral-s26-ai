@@ -32,10 +32,7 @@ class MainView : VerticalLayout() {
         isPadding = true
         isSpacing = true
 
-        add(
-            H3("Минерал 26 AI"),
-            Paragraph("Выбор проекта, просмотр объектов и редактирование свойств в одном экране.")
-        )
+        add(H3("Минерал 26 AI"))
 
         configureProjectList()
         configureObjectGallery()
