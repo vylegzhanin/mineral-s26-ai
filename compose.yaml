@@ -1,0 +1,60 @@
+name: vaadin-oss-platform
+
+services:
+  ui-dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: docker/ui/Dockerfile
+      args:
+        BUILD_PROFILE: dev
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - edge-dev
+
+  edge-dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: docker/ktor/Dockerfile
+      args:
+        BUILD_PROFILE: dev
+    environment:
+      KTOR_ENV: dev
+      PORT: 8081
+    ports:
+      - "8081:8081"
+
+  ui-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: docker/ui/Dockerfile
+      args:
+        BUILD_PROFILE: prod
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      - edge-prod
+
+  edge-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: docker/ktor/Dockerfile
+      args:
+        BUILD_PROFILE: prod
+    environment:
+      KTOR_ENV: prod
+      PORT: 8081
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
