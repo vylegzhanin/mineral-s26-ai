@@ -1,16 +1,20 @@
 package com.example.ui
 
 import com.vaadin.flow.component.Component
-import com.vaadin.flow.component.grid.Grid
-import com.vaadin.flow.component.grid.GridVariant
+import com.vaadin.flow.component.checkbox.Checkbox
+import com.vaadin.flow.component.combobox.ComboBox
+import com.vaadin.flow.component.datepicker.DatePicker
+import com.vaadin.flow.component.formlayout.FormLayout
 import com.vaadin.flow.component.html.*
+import com.vaadin.flow.component.numberfield.NumberField
 import com.vaadin.flow.component.orderedlayout.FlexComponent
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.splitlayout.SplitLayout
+import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
-import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.dom.Style
 import com.vaadin.flow.router.Route
+import java.time.LocalDate
 
 @Route("")
 class MainView : VerticalLayout() {
@@ -22,7 +26,7 @@ class MainView : VerticalLayout() {
     private val projectList = com.vaadin.flow.component.html.Div()
     private val objectGallery = com.vaadin.flow.component.html.Div()
     private val selectedObjectTitle = H4("Выберите объект")
-    private val propertyGrid = Grid<PropertyItem>()
+    private val propertyEditor = com.vaadin.flow.component.html.Div()
 
     private var selectedProject: DatasetProject? = null
     private var selectedObject: DatasetObject? = null
@@ -36,17 +40,17 @@ class MainView : VerticalLayout() {
 
         configureProjectList()
         configureObjectGallery()
-        configurePropertyGrid()
+        configurePropertyEditor()
 
         val leftPanel = panel(projectHeader, projectList)
         val centerPanel = panel(objectHeader, objectGallery)
         val rightPanel = panel(
             "Свойства объекта",
-            VerticalLayout(selectedObjectTitle, propertyGrid).apply {
+            VerticalLayout(selectedObjectTitle, propertyEditor).apply {
                 setSizeFull()
                 isPadding = false
                 isSpacing = true
-                setFlexGrow(1.0, propertyGrid)
+                setFlexGrow(1.0, propertyEditor)
             },
             bodyScrollable = false
         )
@@ -89,23 +93,14 @@ class MainView : VerticalLayout() {
         objectGallery.setWidthFull()
     }
 
-    private fun configurePropertyGrid() {
-        propertyGrid.setSizeFull()
-        propertyGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES)
-        propertyGrid.addColumn(PropertyItem::name).setHeader("Свойство").setAutoWidth(true).setFlexGrow(0)
-        propertyGrid.addColumn(
-            ComponentRenderer { item ->
-                TextField().apply {
-                    value = item.value
-                    isClearButtonVisible = true
-                    setWidthFull()
-                    addValueChangeListener {
-                        item.value = it.value
-                        selectedObject?.properties?.put(item.name, it.value)
-                    }
-                }
-            }
-        ).setHeader("Значение").setFlexGrow(1)
+    private fun configurePropertyEditor() {
+        propertyEditor.style["display"] = "flex"
+        propertyEditor.style["flex-direction"] = "column"
+        propertyEditor.style["gap"] = "12px"
+        propertyEditor.style["padding"] = "4px"
+        propertyEditor.style["box-sizing"] = "border-box"
+        propertyEditor.style["overflow"] = "auto"
+        propertyEditor.setSizeFull()
     }
 
     private fun selectProject(project: DatasetProject) {
@@ -225,19 +220,135 @@ class MainView : VerticalLayout() {
     }
 
     private fun updateProperties(obj: DatasetObject?) {
+        propertyEditor.removeAll()
+
         if (obj == null) {
             selectedObjectTitle.text = "Выберите объект"
-            propertyGrid.setItems(emptyList())
+            propertyEditor.add(Paragraph("Выберите объект, чтобы увидеть и отредактировать его свойства."))
             return
         }
 
         selectedObjectTitle.text = "Свойства: ${obj.name}"
-        propertyGrid.setItems(
-            obj.properties.entries
-                .map { PropertyItem(it.key, it.value) }
-                .sortedBy { it.name }
+        propertyEditor.add(
+            propertySection(
+                "Основные параметры",
+                buildPropertyForm(obj)
+            ),
+            propertySection(
+                "Расширенные атрибуты",
+                buildAdvancedControls(obj)
+            )
         )
     }
+
+    private fun buildPropertyForm(obj: DatasetObject): Component {
+        val form = FormLayout().apply {
+            setWidthFull()
+            responsiveSteps = listOf(
+                FormLayout.ResponsiveStep("0", 1),
+                FormLayout.ResponsiveStep("480px", 2)
+            )
+        }
+
+        obj.properties.entries
+            .sortedBy { it.key }
+            .forEach { (name, value) ->
+                form.addFormItem(propertyInput(name, value, obj), prettyLabel(name))
+            }
+
+        return form
+    }
+
+    private fun propertyInput(name: String, value: String, obj: DatasetObject): Component =
+        when (name) {
+            "size_fraction" -> comboEditor(name, value, obj, listOf("40.+60", "60.+100", "-100"))
+            "grain_class" -> comboEditor(name, value, obj, listOf("светлое зерно", "темное зерно", "сросток", "серое зерно"))
+            "shape" -> comboEditor(name, value, obj, listOf("угловатое", "окатанное", "удлиненное"))
+            "material" -> comboEditor(name, value, obj, listOf("руда", "концентрат", "шламы"))
+            "brightness" -> comboEditor(name, value, obj, listOf("низкая", "средняя", "высокая"))
+            "contrast" -> comboEditor(name, value, obj, listOf("низкий", "средний", "высокий"))
+            "notes" -> TextArea().apply {
+                this.value = value
+                isClearButtonVisible = true
+                minHeight = "110px"
+                setWidthFull()
+                addValueChangeListener { obj.properties[name] = it.value }
+            }
+            else -> TextField().apply {
+                this.value = value
+                isClearButtonVisible = true
+                setWidthFull()
+                addValueChangeListener { obj.properties[name] = it.value }
+            }
+        }
+
+    private fun comboEditor(name: String, value: String, obj: DatasetObject, options: List<String>): ComboBox<String> =
+        ComboBox<String>().apply {
+            setItems(options)
+            isAllowCustomValue = true
+            this.value = value
+            setWidthFull()
+            addValueChangeListener { event -> obj.properties[name] = event.value ?: "" }
+            addCustomValueSetListener { event ->
+                obj.properties[name] = event.detail
+                this.value = event.detail
+            }
+        }
+
+    private fun buildAdvancedControls(obj: DatasetObject): Component {
+        val form = FormLayout().apply {
+            setWidthFull()
+            responsiveSteps = listOf(
+                FormLayout.ResponsiveStep("0", 1),
+                FormLayout.ResponsiveStep("640px", 2)
+            )
+        }
+
+        val status = ComboBox<String>("Статус").apply {
+            setItems("Черновик", "На проверке", "Подтвержден", "Отклонен")
+            value = obj.properties["meta_status"] ?: "Черновик"
+            addValueChangeListener { obj.properties["meta_status"] = it.value ?: "" }
+        }
+
+        val confidence = NumberField("Уверенность, %").apply {
+            value = obj.properties["meta_confidence"]?.toDoubleOrNull() ?: 85.0
+            min = 0.0
+            max = 100.0
+            step = 1.0
+            addValueChangeListener { obj.properties["meta_confidence"] = ((it.value ?: 0.0).toInt()).toString() }
+        }
+
+        val analysisDate = DatePicker("Дата анализа").apply {
+            value = obj.properties["meta_analysis_date"]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                ?: LocalDate.now()
+            addValueChangeListener { obj.properties["meta_analysis_date"] = it.value?.toString().orEmpty() }
+        }
+
+        val reviewed = Checkbox("Проверено оператором").apply {
+            value = obj.properties["meta_reviewed"]?.toBoolean() ?: false
+            addValueChangeListener { obj.properties["meta_reviewed"] = it.value.toString() }
+        }
+
+        form.add(status, confidence, analysisDate, reviewed)
+        return form
+    }
+
+    private fun propertySection(title: String, content: Component): Component =
+        com.vaadin.flow.component.html.Div(
+            H5(title).apply {
+                style["margin"] = "0 0 8px 0"
+            },
+            content
+        ).apply {
+            style["padding"] = "10px"
+            style["border"] = "1px solid var(--lumo-contrast-20pct)"
+            style["border-radius"] = "10px"
+            style["background"] = "var(--lumo-base-color)"
+        }
+
+    private fun prettyLabel(name: String): String = name
+        .replace("_", " ")
+        .replaceFirstChar { it.uppercase() }
 
     private fun panel(title: String, content: Component, bodyScrollable: Boolean = true): VerticalLayout =
         panel(H4(title), content, bodyScrollable)
@@ -278,11 +389,6 @@ private data class DatasetObject(
     val category: String,
     val previewUrl: String,
     val properties: MutableMap<String, String>
-)
-
-private data class PropertyItem(
-    val name: String,
-    var value: String
 )
 
 private fun demoProjects(): List<DatasetProject> = listOf(
