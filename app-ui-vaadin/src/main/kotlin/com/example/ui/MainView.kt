@@ -198,7 +198,7 @@ class MainView : VerticalLayout() {
             style["left"] = "0"
             style["right"] = "0"
             style["bottom"] = "0"
-            style["padding"] = "10px 12px 14px"
+            style["padding"] = "10px 12px 8px"
             style["background"] = "linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0.08))"
             style["border-radius"] = "0 0 10px 10px"
         }
@@ -247,6 +247,7 @@ class MainView : VerticalLayout() {
             setSizeFull()
             style["min-height"] = "0"
             style["overflow"] = if (bodyScrollable) "auto" else "hidden"
+            style["padding-top"] = "8px"
         }
 
         return VerticalLayout(title, body).apply {
