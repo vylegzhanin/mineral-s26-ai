@@ -5,6 +5,7 @@ import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.grid.GridVariant
 import com.vaadin.flow.component.html.*
 import com.vaadin.flow.component.orderedlayout.Scroller
+import com.vaadin.flow.component.orderedlayout.FlexComponent
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.splitlayout.SplitLayout
 import com.vaadin.flow.component.textfield.TextField
@@ -17,7 +18,8 @@ class MainView : VerticalLayout() {
 
     private val projects = demoProjects()
 
-    private val projectGrid = Grid<DatasetProject>()
+    private val projectList = com.vaadin.flow.component.html.Div()
+    private val projectCounter = Span("0 проектов")
     private val objectGallery = com.vaadin.flow.component.html.Div()
     private val objectCounter = Span("0 объектов")
     private val selectedObjectTitle = H4("Выберите объект")
@@ -36,11 +38,18 @@ class MainView : VerticalLayout() {
             Paragraph("Выбор проекта, просмотр объектов и редактирование свойств в одном экране.")
         )
 
-        configureProjectGrid()
+        configureProjectList()
         configureObjectGallery()
         configurePropertyGrid()
 
-        val leftPanel = panel("1) Проекты (как список)", projectGrid)
+        val leftPanel = panel(
+            "1) Проекты (вертикальный список карточек)",
+            VerticalLayout(projectCounter, Scroller(projectList).apply { setSizeFull() }).apply {
+                setSizeFull()
+                isPadding = false
+                isSpacing = true
+            }
+        )
         val centerPanel = panel(
             "2) Объекты (в стиле sample gallery)",
             VerticalLayout(objectCounter, Scroller(objectGallery).apply { setSizeFull() }).apply {
@@ -71,25 +80,23 @@ class MainView : VerticalLayout() {
         add(rootSplit)
         expand(rootSplit)
 
-        projectGrid.setItems(projects)
-        projects.firstOrNull()?.let { projectGrid.select(it) }
+        renderProjects()
+        projects.firstOrNull()?.let { selectProject(it) }
     }
 
-    private fun configureProjectGrid() {
-        projectGrid.setSizeFull()
-        projectGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES)
-        projectGrid.addColumn(DatasetProject::name).setHeader("Проект").setAutoWidth(true).setFlexGrow(1)
-        projectGrid.addColumn(DatasetProject::type).setHeader("Тип").setAutoWidth(true).setFlexGrow(1)
-        projectGrid.addColumn { it.objects.size }.setHeader("Объектов").setAutoWidth(true).setFlexGrow(0)
-
-        projectGrid.asSingleSelect().addValueChangeListener { event ->
-            event.value?.let { selectProject(it) }
-        }
+    private fun configureProjectList() {
+        projectList.style["display"] = "flex"
+        projectList.style["flex-direction"] = "column"
+        projectList.style["gap"] = "10px"
+        projectList.style["padding"] = "4px"
+        projectList.style["box-sizing"] = "border-box"
+        projectList.setWidthFull()
     }
 
     private fun configureObjectGallery() {
-        objectGallery.style["display"] = "grid"
-        objectGallery.style["grid-template-columns"] = "repeat(auto-fill, minmax(180px, 1fr))"
+        objectGallery.style["display"] = "flex"
+        objectGallery.style["flex-wrap"] = "wrap"
+        objectGallery.style["align-items"] = "flex-start"
         objectGallery.style["gap"] = "12px"
         objectGallery.style["padding"] = "4px"
         objectGallery.style["box-sizing"] = "border-box"
@@ -118,6 +125,7 @@ class MainView : VerticalLayout() {
     private fun selectProject(project: DatasetProject) {
         selectedProject = project
         selectedObject = null
+        renderProjects()
         objectCounter.text = "${project.objects.size} объектов"
         renderObjects(project.objects)
         updateProperties(null)
@@ -142,30 +150,85 @@ class MainView : VerticalLayout() {
         }
     }
 
-    private fun objectCard(obj: DatasetObject, selected: Boolean, onClick: () -> Unit): Component {
-        val image = Image(obj.previewUrl, obj.name).apply {
-            width = "100%"
-            height = "140px"
+    private fun renderProjects() {
+        projectCounter.text = "${projects.size} проектов"
+        projectList.removeAll()
+        projects.forEach { project ->
+            projectList.add(projectCard(project, project == selectedProject) { selectProject(project) })
+        }
+    }
+
+    private fun projectCard(project: DatasetProject, selected: Boolean, onClick: () -> Unit): Component {
+        val image = Image(project.previewUrl, project.name).apply {
+            width = "96px"
+            height = "72px"
             style["object-fit"] = "cover"
             style["border-radius"] = "8px"
+            style["flex-shrink"] = "0"
         }
 
-        val name = Span(obj.name).apply {
+        val title = Span(project.name).apply {
             style["font-weight"] = "600"
             style["display"] = "block"
         }
-        val meta = Span("${obj.category} • ${obj.properties.size} props").apply {
+        val meta = Span("${project.type} • ${project.objects.size} объектов").apply {
             style["color"] = "var(--lumo-secondary-text-color)"
             style["font-size"] = "var(--lumo-font-size-s)"
             style["display"] = "block"
         }
 
-        return com.vaadin.flow.component.html.Div(image, name, meta).apply {
+        return com.vaadin.flow.component.html.Div(image, com.vaadin.flow.component.html.Div(title, meta)).apply {
+            style["display"] = "flex"
+            style["align-items"] = "center"
+            style["gap"] = "10px"
             style["padding"] = "8px"
             style["border-radius"] = "10px"
             style["background"] = "var(--lumo-base-color)"
             style["cursor"] = "pointer"
             style["box-shadow"] = "var(--lumo-box-shadow-xs)"
+            styleSelection(selected, style)
+            addClickListener { onClick() }
+        }
+    }
+
+    private fun objectCard(obj: DatasetObject, selected: Boolean, onClick: () -> Unit): Component {
+        val image = Image(obj.previewUrl, obj.name).apply {
+            style["display"] = "block"
+            style["width"] = "auto"
+            style["height"] = "auto"
+            style["max-width"] = "240px"
+            style["max-height"] = "180px"
+            style["border-radius"] = "10px"
+        }
+
+        val name = Span(obj.name).apply {
+            style["font-weight"] = "600"
+            style["display"] = "block"
+            style["color"] = "white"
+        }
+        val meta = Span("${obj.category} • ${obj.properties.size} props").apply {
+            style["color"] = "rgba(255,255,255,0.9)"
+            style["font-size"] = "var(--lumo-font-size-s)"
+            style["display"] = "block"
+        }
+
+        val overlay = com.vaadin.flow.component.html.Div(name, meta).apply {
+            style["position"] = "absolute"
+            style["left"] = "0"
+            style["right"] = "0"
+            style["bottom"] = "0"
+            style["padding"] = "8px 10px"
+            style["background"] = "linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0.08))"
+            style["border-radius"] = "0 0 10px 10px"
+        }
+
+        return com.vaadin.flow.component.html.Div(image, overlay).apply {
+            style["position"] = "relative"
+            style["display"] = "inline-block"
+            style["line-height"] = "0"
+            style["border-radius"] = "10px"
+            style["cursor"] = "pointer"
+            style["overflow"] = "hidden"
             styleSelection(selected, style)
             addClickListener { onClick() }
         }
@@ -199,6 +262,7 @@ class MainView : VerticalLayout() {
             setSizeFull()
             isPadding = true
             isSpacing = true
+            setAlignItems(FlexComponent.Alignment.STRETCH)
             style["border"] = "1px solid var(--lumo-contrast-20pct)"
             style["border-radius"] = "10px"
             style["background"] = "var(--lumo-contrast-5pct)"
