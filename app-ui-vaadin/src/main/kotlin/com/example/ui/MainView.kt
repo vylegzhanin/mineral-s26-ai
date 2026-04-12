@@ -206,13 +206,8 @@ class MainView : VerticalLayout() {
             style["display"] = "block"
             style["color"] = "white"
         }
-        val meta = Span("${obj.category} • ${obj.properties.size} props").apply {
-            style["color"] = "rgba(255,255,255,0.9)"
-            style["font-size"] = "var(--lumo-font-size-s)"
-            style["display"] = "block"
-        }
 
-        val overlay = com.vaadin.flow.component.html.Div(name, meta).apply {
+        val overlay = com.vaadin.flow.component.html.Div(name).apply {
             style["position"] = "absolute"
             style["left"] = "0"
             style["right"] = "0"
@@ -238,7 +233,7 @@ class MainView : VerticalLayout() {
         if (selected) {
             style["border"] = "2px solid var(--lumo-primary-color)"
         } else {
-            style["border"] = "1px solid var(--lumo-contrast-20pct)"
+            style["border"] = "2px solid var(--lumo-contrast-20pct)"
         }
     }
 

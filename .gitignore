@@ -5,3 +5,9 @@
 node/
 node_modules/
 .vaadin/
+
+# Vaadin generated frontend artifacts
+**/frontend/generated/
+**/src/main/frontend/generated/
+**/vite.generated.ts
+**/webpack.generated.js
