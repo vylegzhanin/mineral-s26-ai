@@ -1,17 +1,12 @@
 package com.example.ui
 
 import com.vaadin.flow.component.Component
-import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.grid.GridVariant
-import com.vaadin.flow.component.html.H3
-import com.vaadin.flow.component.html.H4
-import com.vaadin.flow.component.html.Image
-import com.vaadin.flow.component.html.Paragraph
-import com.vaadin.flow.component.html.Span
+import com.vaadin.flow.component.html.*
 import com.vaadin.flow.component.orderedlayout.Scroller
-import com.vaadin.flow.component.orderedlayout.SplitLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
+import com.vaadin.flow.component.splitlayout.SplitLayout
 import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.dom.Style
