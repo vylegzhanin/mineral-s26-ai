@@ -190,6 +190,7 @@ class MainView : VerticalLayout() {
             style["font-weight"] = "600"
             style["display"] = "block"
             style["color"] = "white"
+            style["line-height"] = "1.25"
         }
 
         val overlay = com.vaadin.flow.component.html.Div(name).apply {
@@ -197,7 +198,7 @@ class MainView : VerticalLayout() {
             style["left"] = "0"
             style["right"] = "0"
             style["bottom"] = "0"
-            style["padding"] = "8px 10px"
+            style["padding"] = "10px 12px 14px"
             style["background"] = "linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0.08))"
             style["border-radius"] = "0 0 10px 10px"
         }
@@ -216,10 +217,11 @@ class MainView : VerticalLayout() {
 
     private fun styleSelection(selected: Boolean, style: Style) {
         if (selected) {
-            style["border"] = "2px solid var(--lumo-primary-color)"
+            style["outline"] = "2px solid var(--lumo-primary-color)"
         } else {
-            style["border"] = "2px solid var(--lumo-contrast-20pct)"
+            style["outline"] = "2px solid var(--lumo-contrast-20pct)"
         }
+        style["outline-offset"] = "0"
     }
 
     private fun updateProperties(obj: DatasetObject?) {
