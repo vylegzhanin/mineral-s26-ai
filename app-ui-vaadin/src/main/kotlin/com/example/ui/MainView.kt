@@ -1,5 +1,6 @@
 package com.example.ui
 
+import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.grid.GridVariant
@@ -8,18 +9,22 @@ import com.vaadin.flow.component.html.H4
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Paragraph
 import com.vaadin.flow.component.html.Span
-import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.Scroller
+import com.vaadin.flow.component.orderedlayout.SplitLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.data.renderer.ComponentRenderer
+import com.vaadin.flow.dom.Style
 import com.vaadin.flow.router.Route
 
 @Route("")
 class MainView : VerticalLayout() {
 
     private val projects = demoProjects()
-    private val objectColumn = VerticalLayout()
+
+    private val projectGrid = Grid<DatasetProject>()
+    private val objectGallery = com.vaadin.flow.component.html.Div()
+    private val objectCounter = Span("0 объектов")
     private val selectedObjectTitle = H4("Выберите объект")
     private val propertyGrid = Grid<PropertyItem>()
 
@@ -27,74 +32,78 @@ class MainView : VerticalLayout() {
     private var selectedObject: DatasetObject? = null
 
     init {
+        setSizeFull()
         isPadding = true
         isSpacing = true
-        setSizeFull()
 
         add(
             H3("Прототип просмотра и анализа датасета"),
-            Paragraph("Выберите проект, затем объект, и отредактируйте свойства выбранного объекта.")
+            Paragraph("Выбор проекта, просмотр объектов и редактирование свойств в одном экране.")
         )
 
-        val content = HorizontalLayout().apply {
+        configureProjectGrid()
+        configureObjectGallery()
+        configurePropertyGrid()
+
+        val leftPanel = panel("1) Проекты (как список)", projectGrid)
+        val centerPanel = panel(
+            "2) Объекты (в стиле sample gallery)",
+            VerticalLayout(objectCounter, Scroller(objectGallery).apply { setSizeFull() }).apply {
+                setSizeFull()
+                isPadding = false
+                isSpacing = true
+            }
+        )
+        val rightPanel = panel(
+            "3) Свойства выбранного объекта",
+            VerticalLayout(selectedObjectTitle, propertyGrid).apply {
+                setSizeFull()
+                isPadding = false
+                isSpacing = true
+            }
+        )
+
+        // 20% | 60% | 20%: настраивается пользователем через drag splitters
+        val centerRightSplit = SplitLayout(centerPanel, rightPanel).apply {
             setSizeFull()
-            setPadding(false)
-            setSpacing(true)
-
-            add(
-                buildProjectsPanel(),
-                buildObjectsPanel(),
-                buildPropertiesPanel()
-            )
-            setFlexGrow(1.0, getComponentAt(0), getComponentAt(1), getComponentAt(2))
+            setSplitterPosition(75.0) // 75% of remaining 80% = 60% of full width
+        }
+        val rootSplit = SplitLayout(leftPanel, centerRightSplit).apply {
+            setSizeFull()
+            setSplitterPosition(20.0)
         }
 
-        add(content)
-        expand(content)
+        add(rootSplit)
+        expand(rootSplit)
 
-        if (projects.isNotEmpty()) {
-            selectProject(projects.first())
+        projectGrid.setItems(projects)
+        projects.firstOrNull()?.let { projectGrid.select(it) }
+    }
+
+    private fun configureProjectGrid() {
+        projectGrid.setSizeFull()
+        projectGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES)
+        projectGrid.addColumn(DatasetProject::name).setHeader("Проект").setAutoWidth(true).setFlexGrow(1)
+        projectGrid.addColumn(DatasetProject::type).setHeader("Тип").setAutoWidth(true).setFlexGrow(1)
+        projectGrid.addColumn { it.objects.size }.setHeader("Объектов").setAutoWidth(true).setFlexGrow(0)
+
+        projectGrid.asSingleSelect().addValueChangeListener { event ->
+            event.value?.let { selectProject(it) }
         }
     }
 
-    private fun buildProjectsPanel(): VerticalLayout {
-        val projectList = VerticalLayout().apply {
-            isPadding = false
-            isSpacing = true
-        }
-
-        projects.forEach { project ->
-            projectList.add(
-                card(
-                    title = project.name,
-                    imageUrl = project.previewUrl,
-                    summaryLines = listOf(
-                        "Тип: ${project.type}",
-                        "Объектов: ${project.objects.size}",
-                        "Источник: ${project.source}"
-                    ),
-                    selectCaption = "Открыть проект"
-                ) { selectProject(project) }
-            )
-        }
-
-        return panel(
-            "1) Проекты (датасеты)",
-            Scroller(projectList).apply { setSizeFull() }
-        )
+    private fun configureObjectGallery() {
+        objectGallery.style["display"] = "grid"
+        objectGallery.style["grid-template-columns"] = "repeat(auto-fill, minmax(180px, 1fr))"
+        objectGallery.style["gap"] = "12px"
+        objectGallery.style["padding"] = "4px"
+        objectGallery.style["box-sizing"] = "border-box"
+        objectGallery.setSizeFull()
     }
 
-    private fun buildObjectsPanel(): VerticalLayout {
-        objectColumn.isPadding = false
-        objectColumn.isSpacing = true
-
-        return panel(
-            "2) Объекты выбранного проекта",
-            Scroller(objectColumn).apply { setSizeFull() }
-        )
-    }
-
-    private fun buildPropertiesPanel(): VerticalLayout {
+    private fun configurePropertyGrid() {
+        propertyGrid.setSizeFull()
+        propertyGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES)
         propertyGrid.addColumn(PropertyItem::name).setHeader("Свойство").setAutoWidth(true).setFlexGrow(0)
         propertyGrid.addColumn(
             ComponentRenderer { item ->
@@ -109,52 +118,69 @@ class MainView : VerticalLayout() {
                 }
             }
         ).setHeader("Значение").setFlexGrow(1)
-
-        propertyGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES)
-        propertyGrid.setSizeFull()
-
-        val wrapper = VerticalLayout(selectedObjectTitle, propertyGrid).apply {
-            setSizeFull()
-            isPadding = false
-            isSpacing = true
-        }
-
-        return panel("3) Свойства выбранного объекта", wrapper)
     }
 
     private fun selectProject(project: DatasetProject) {
         selectedProject = project
         selectedObject = null
+        objectCounter.text = "${project.objects.size} объектов"
         renderObjects(project.objects)
         updateProperties(null)
     }
 
     private fun selectObject(obj: DatasetObject) {
         selectedObject = obj
+        renderObjects(selectedProject?.objects.orEmpty())
         updateProperties(obj)
     }
 
     private fun renderObjects(objects: List<DatasetObject>) {
-        objectColumn.removeAll()
+        objectGallery.removeAll()
 
         if (objects.isEmpty()) {
-            objectColumn.add(Paragraph("У проекта нет объектов."))
+            objectGallery.add(Paragraph("Нет объектов в выбранном проекте."))
             return
         }
 
         objects.forEach { obj ->
-            objectColumn.add(
-                card(
-                    title = obj.name,
-                    imageUrl = obj.previewUrl,
-                    summaryLines = listOf(
-                        "ID: ${obj.id}",
-                        "Класс: ${obj.category}",
-                        "Параметров: ${obj.properties.size}"
-                    ),
-                    selectCaption = "Выбрать объект"
-                ) { selectObject(obj) }
-            )
+            objectGallery.add(objectCard(obj, obj == selectedObject) { selectObject(obj) })
+        }
+    }
+
+    private fun objectCard(obj: DatasetObject, selected: Boolean, onClick: () -> Unit): Component {
+        val image = Image(obj.previewUrl, obj.name).apply {
+            width = "100%"
+            height = "140px"
+            style["object-fit"] = "cover"
+            style["border-radius"] = "8px"
+        }
+
+        val name = Span(obj.name).apply {
+            style["font-weight"] = "600"
+            style["display"] = "block"
+        }
+        val meta = Span("${obj.category} • ${obj.properties.size} props").apply {
+            style["color"] = "var(--lumo-secondary-text-color)"
+            style["font-size"] = "var(--lumo-font-size-s)"
+            style["display"] = "block"
+        }
+
+        return com.vaadin.flow.component.html.Div(image, name, meta).apply {
+            style["padding"] = "8px"
+            style["border-radius"] = "10px"
+            style["background"] = "var(--lumo-base-color)"
+            style["cursor"] = "pointer"
+            style["box-shadow"] = "var(--lumo-box-shadow-xs)"
+            styleSelection(selected, style)
+            addClickListener { onClick() }
+        }
+    }
+
+    private fun styleSelection(selected: Boolean, style: Style) {
+        if (selected) {
+            style["border"] = "2px solid var(--lumo-primary-color)"
+        } else {
+            style["border"] = "1px solid var(--lumo-contrast-20pct)"
         }
     }
 
@@ -166,54 +192,22 @@ class MainView : VerticalLayout() {
         }
 
         selectedObjectTitle.text = "Свойства: ${obj.name}"
-        val rows = obj.properties.entries
-            .map { PropertyItem(it.key, it.value) }
-            .sortedBy { it.name }
-        propertyGrid.setItems(rows)
+        propertyGrid.setItems(
+            obj.properties.entries
+                .map { PropertyItem(it.key, it.value) }
+                .sortedBy { it.name }
+        )
     }
 
-    private fun panel(title: String, content: com.vaadin.flow.component.Component): VerticalLayout =
+    private fun panel(title: String, content: Component): VerticalLayout =
         VerticalLayout(H4(title), content).apply {
             setSizeFull()
-            setPadding(true)
+            isPadding = true
             isSpacing = true
             style["border"] = "1px solid var(--lumo-contrast-20pct)"
             style["border-radius"] = "10px"
-            style["background"] = "var(--lumo-base-color)"
-        }
-
-    private fun card(
-        title: String,
-        imageUrl: String,
-        summaryLines: List<String>,
-        selectCaption: String,
-        onSelect: () -> Unit
-    ): VerticalLayout {
-        val image = Image(imageUrl, title).apply {
-            width = "100%"
-            height = "120px"
-            style["object-fit"] = "cover"
-            style["border-radius"] = "8px"
-        }
-
-        val details = VerticalLayout().apply {
-            isPadding = false
-            isSpacing = false
-            add(H4(title))
-            summaryLines.forEach { line ->
-                add(Span(line).apply { style["display"] = "block" })
-            }
-        }
-
-        return VerticalLayout(image, details, Button(selectCaption) { onSelect() }).apply {
-            width = "100%"
-            setPadding(true)
-            isSpacing = true
-            style["border"] = "1px solid var(--lumo-contrast-10pct)"
-            style["border-radius"] = "10px"
             style["background"] = "var(--lumo-contrast-5pct)"
         }
-    }
 }
 
 private data class DatasetProject(
