@@ -38,32 +38,17 @@ class MainView : VerticalLayout() {
         configureObjectGallery()
         configurePropertyGrid()
 
-        val leftPanel = panel(
-            projectHeader,
-            VerticalLayout(projectList).apply {
-                setSizeFull()
-                isPadding = false
-                isSpacing = true
-                expand(projectList)
-            }
-        )
-        val centerPanel = panel(
-            objectHeader,
-            VerticalLayout(objectGallery).apply {
-                setSizeFull()
-                isPadding = false
-                isSpacing = true
-                expand(objectGallery)
-            }
-        )
+        val leftPanel = panel(projectHeader, projectList)
+        val centerPanel = panel(objectHeader, objectGallery)
         val rightPanel = panel(
             "Свойства объекта",
             VerticalLayout(selectedObjectTitle, propertyGrid).apply {
                 setSizeFull()
                 isPadding = false
                 isSpacing = true
-                expand(propertyGrid)
-            }
+                setFlexGrow(1.0, propertyGrid)
+            },
+            bodyScrollable = false
         )
 
         // 20% | 60% | 20%: настраивается пользователем через drag splitters
@@ -89,7 +74,7 @@ class MainView : VerticalLayout() {
         projectList.style["gap"] = "10px"
         projectList.style["padding"] = "4px"
         projectList.style["box-sizing"] = "border-box"
-        projectList.style["overflow"] = "auto"
+        projectList.style["align-content"] = "start"
         projectList.setWidthFull()
     }
 
@@ -100,8 +85,8 @@ class MainView : VerticalLayout() {
         objectGallery.style["gap"] = "12px"
         objectGallery.style["padding"] = "4px"
         objectGallery.style["box-sizing"] = "border-box"
-        objectGallery.style["overflow"] = "auto"
-        objectGallery.setSizeFull()
+        objectGallery.style["align-content"] = "flex-start"
+        objectGallery.setWidthFull()
     }
 
     private fun configurePropertyGrid() {
@@ -252,18 +237,27 @@ class MainView : VerticalLayout() {
         )
     }
 
-    private fun panel(title: String, content: Component): VerticalLayout = panel(H4(title), content)
+    private fun panel(title: String, content: Component, bodyScrollable: Boolean = true): VerticalLayout =
+        panel(H4(title), content, bodyScrollable)
 
-    private fun panel(title: Component, content: Component): VerticalLayout =
-        VerticalLayout(title, content).apply {
+    private fun panel(title: Component, content: Component, bodyScrollable: Boolean = true): VerticalLayout {
+        val body = com.vaadin.flow.component.html.Div(content).apply {
+            setSizeFull()
+            style["min-height"] = "0"
+            style["overflow"] = if (bodyScrollable) "auto" else "hidden"
+        }
+
+        return VerticalLayout(title, body).apply {
             setSizeFull()
             isPadding = true
-            isSpacing = true
+            isSpacing = false
             setAlignItems(FlexComponent.Alignment.STRETCH)
+            setFlexGrow(1.0, body)
             style["border"] = "1px solid var(--lumo-contrast-20pct)"
             style["border-radius"] = "10px"
             style["background"] = "var(--lumo-contrast-5pct)"
         }
+    }
 }
 
 private data class DatasetProject(
