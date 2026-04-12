@@ -34,7 +34,7 @@ class MainView : VerticalLayout() {
         isSpacing = true
 
         add(
-            H3("Прототип просмотра и анализа датасета"),
+            H3("Минерал 26 AI"),
             Paragraph("Выбор проекта, просмотр объектов и редактирование свойств в одном экране.")
         )
 
@@ -43,7 +43,7 @@ class MainView : VerticalLayout() {
         configurePropertyGrid()
 
         val leftPanel = panel(
-            "1) Проекты (вертикальный список карточек)",
+            "Проекты",
             VerticalLayout(projectCounter, Scroller(projectList).apply { setSizeFull() }).apply {
                 setSizeFull()
                 isPadding = false
@@ -51,7 +51,7 @@ class MainView : VerticalLayout() {
             }
         )
         val centerPanel = panel(
-            "2) Объекты (в стиле sample gallery)",
+            "Объекты",
             VerticalLayout(objectCounter, Scroller(objectGallery).apply { setSizeFull() }).apply {
                 setSizeFull()
                 isPadding = false
@@ -59,7 +59,7 @@ class MainView : VerticalLayout() {
             }
         )
         val rightPanel = panel(
-            "3) Свойства выбранного объекта",
+            "Свойства объекта",
             VerticalLayout(selectedObjectTitle, propertyGrid).apply {
                 setSizeFull()
                 isPadding = false
