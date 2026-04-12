@@ -194,10 +194,9 @@ class MainView : VerticalLayout() {
     private fun objectCard(obj: DatasetObject, selected: Boolean, onClick: () -> Unit): Component {
         val image = Image(obj.previewUrl, obj.name).apply {
             style["display"] = "block"
-            style["width"] = "auto"
-            style["height"] = "auto"
-            style["max-width"] = "240px"
-            style["max-height"] = "180px"
+            style["width"] = "240px"
+            style["height"] = "180px"
+            style["object-fit"] = "cover"
             style["border-radius"] = "10px"
         }
 
