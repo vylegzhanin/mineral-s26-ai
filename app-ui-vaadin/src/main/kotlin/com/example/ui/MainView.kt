@@ -1,6 +1,5 @@
 package com.example.ui
 
-import com.vaadin.flow.component.Text
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.grid.GridVariant
@@ -8,6 +7,7 @@ import com.vaadin.flow.component.html.H3
 import com.vaadin.flow.component.html.H4
 import com.vaadin.flow.component.html.Image
 import com.vaadin.flow.component.html.Paragraph
+import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.Scroller
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
@@ -200,7 +200,9 @@ class MainView : VerticalLayout() {
             isPadding = false
             isSpacing = false
             add(H4(title))
-            summaryLines.forEach { add(Text(it), com.vaadin.flow.component.html.Br()) }
+            summaryLines.forEach { line ->
+                add(Span(line).apply { style["display"] = "block" })
+            }
         }
 
         return VerticalLayout(image, details, Button(selectCaption) { onSelect() }).apply {
