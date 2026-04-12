@@ -6,10 +6,10 @@ import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.component.datepicker.DatePicker
 import com.vaadin.flow.component.formlayout.FormLayout
 import com.vaadin.flow.component.html.*
-import com.vaadin.flow.component.numberfield.NumberField
 import com.vaadin.flow.component.orderedlayout.FlexComponent
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.splitlayout.SplitLayout
+import com.vaadin.flow.component.textfield.NumberField
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.dom.Style
@@ -205,7 +205,7 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "10px"
             style["cursor"] = "pointer"
             style["overflow"] = "hidden"
-            styleSelection(selected, style)
+            styleObjectSelection(selected, style)
             addClickListener { onClick() }
         }
     }
@@ -215,6 +215,17 @@ class MainView : VerticalLayout() {
             style["outline"] = "2px solid var(--lumo-primary-color)"
         } else {
             style["outline"] = "2px solid var(--lumo-contrast-20pct)"
+        }
+        style["outline-offset"] = "0"
+    }
+
+    private fun styleObjectSelection(selected: Boolean, style: Style) {
+        if (selected) {
+            style["outline"] = "2px solid rgba(255,255,255,0.92)"
+            style["box-shadow"] = "0 0 0 4px var(--lumo-primary-color)"
+        } else {
+            style["outline"] = "2px solid var(--lumo-contrast-20pct)"
+            style["box-shadow"] = "none"
         }
         style["outline-offset"] = "0"
     }
