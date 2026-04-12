@@ -288,65 +288,91 @@ private data class PropertyItem(
 
 private fun demoProjects(): List<DatasetProject> = listOf(
     DatasetProject(
-        id = "city-traffic",
-        name = "Городской трафик",
-        type = "Изображения + метаданные",
-        source = "camera-network-01",
-        previewUrl = "https://images.unsplash.com/photo-1465447142348-e9952c393450?auto=format&fit=crop&w=900&q=80",
+        id = "bgok-60-100",
+        name = "BGOK 60.+100",
+        type = "Шлифы (микроскопия)",
+        source = "bgok-lab-60-plus-100",
+        previewUrl = "/images/projects/bgok-60-plus-100.svg",
         objects = listOf(
             DatasetObject(
-                id = "car-001",
-                name = "Автомобиль #001",
-                category = "Car",
-                previewUrl = "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=900&q=80",
+                id = "bgok-grain-001",
+                name = "Зерно BGOK #001",
+                category = "OreGrain",
+                previewUrl = "/images/objects/bgok-grain-001.svg",
                 properties = mutableMapOf(
-                    "speed_kmh" to "53",
-                    "color" to "red",
-                    "lane" to "2",
-                    "detected_at" to "2026-04-12T10:12:00Z"
+                    "project" to "BGOK 60.+100",
+                    "size_fraction" to "60.+100",
+                    "grain_class" to "светлое вкрапление",
+                    "shape" to "угловатое"
                 )
             ),
             DatasetObject(
-                id = "ped-074",
-                name = "Пешеход #074",
-                category = "Person",
-                previewUrl = "https://images.unsplash.com/photo-1529429611278-5db8d3d889e9?auto=format&fit=crop&w=900&q=80",
+                id = "bgok-grain-002",
+                name = "Зерно BGOK #002",
+                category = "OreGrain",
+                previewUrl = "/images/objects/bgok-grain-002.svg",
                 properties = mutableMapOf(
-                    "direction" to "north",
-                    "confidence" to "0.96",
-                    "occluded" to "false"
+                    "project" to "BGOK 60.+100",
+                    "size_fraction" to "60.+100",
+                    "grain_class" to "серое зерно",
+                    "texture" to "штриховая"
+                )
+            ),
+            DatasetObject(
+                id = "bgok-grain-003",
+                name = "Зерно BGOK #003",
+                category = "OreGrain",
+                previewUrl = "/images/objects/bgok-grain-003.svg",
+                properties = mutableMapOf(
+                    "project" to "BGOK 60.+100",
+                    "size_fraction" to "60.+100",
+                    "grain_class" to "сросток",
+                    "notes" to "кластер мелких зерен"
                 )
             )
         )
     ),
     DatasetProject(
-        id = "warehouse-v2",
-        name = "Склад инвентаризации",
-        type = "Фото + табличные атрибуты",
-        source = "warehouse-scan-b",
-        previewUrl = "https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=900&q=80",
+        id = "kgmk-conc",
+        name = "KGMK.conc",
+        type = "Шлифы (концентрат)",
+        source = "kgmk-concentrate-series",
+        previewUrl = "/images/projects/kgmk-conc.svg",
         objects = listOf(
             DatasetObject(
-                id = "box-330",
-                name = "Коробка #330",
-                category = "Package",
-                previewUrl = "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=900&q=80",
+                id = "kgmk-grain-001",
+                name = "Зерно KGMK #001",
+                category = "OreGrain",
+                previewUrl = "/images/objects/kgmk-grain-001.svg",
                 properties = mutableMapOf(
-                    "weight_kg" to "4.2",
-                    "fragile" to "true",
-                    "zone" to "A-17",
-                    "status" to "stored"
+                    "project" to "KGMK.conc",
+                    "material" to "концентрат",
+                    "brightness" to "низкая",
+                    "fractures" to "выраженные"
                 )
             ),
             DatasetObject(
-                id = "pallet-012",
-                name = "Паллета #012",
-                category = "Pallet",
-                previewUrl = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=900&q=80",
+                id = "kgmk-grain-002",
+                name = "Зерно KGMK #002",
+                category = "OreGrain",
+                previewUrl = "/images/objects/kgmk-grain-002.svg",
                 properties = mutableMapOf(
-                    "height_cm" to "155",
-                    "temperature_c" to "5",
-                    "last_check" to "2026-04-11"
+                    "project" to "KGMK.conc",
+                    "material" to "концентрат",
+                    "grain_class" to "светлое зерно",
+                    "contrast" to "высокий"
+                )
+            ),
+            DatasetObject(
+                id = "kgmk-grain-003",
+                name = "Зерно KGMK #003",
+                category = "OreGrain",
+                previewUrl = "/images/objects/kgmk-grain-003.svg",
+                properties = mutableMapOf(
+                    "project" to "KGMK.conc",
+                    "material" to "концентрат",
+                    "grain_class" to "темное зерно",
+                    "notes" to "неоднородный край"
                 )
             )
         )
