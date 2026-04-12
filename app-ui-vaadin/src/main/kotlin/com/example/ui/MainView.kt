@@ -4,7 +4,6 @@ import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.grid.Grid
 import com.vaadin.flow.component.grid.GridVariant
 import com.vaadin.flow.component.html.*
-import com.vaadin.flow.component.orderedlayout.Scroller
 import com.vaadin.flow.component.orderedlayout.FlexComponent
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.splitlayout.SplitLayout
@@ -18,10 +17,10 @@ class MainView : VerticalLayout() {
 
     private val projects = demoProjects()
 
+    private val projectHeader = H4("Проекты")
+    private val objectHeader = H4("Объекты")
     private val projectList = com.vaadin.flow.component.html.Div()
-    private val projectCounter = Span("0 проектов")
     private val objectGallery = com.vaadin.flow.component.html.Div()
-    private val objectCounter = Span("0 объектов")
     private val selectedObjectTitle = H4("Выберите объект")
     private val propertyGrid = Grid<PropertyItem>()
 
@@ -43,19 +42,21 @@ class MainView : VerticalLayout() {
         configurePropertyGrid()
 
         val leftPanel = panel(
-            "Проекты",
-            VerticalLayout(projectCounter, Scroller(projectList).apply { setSizeFull() }).apply {
+            projectHeader,
+            VerticalLayout(projectList).apply {
                 setSizeFull()
                 isPadding = false
                 isSpacing = true
+                expand(projectList)
             }
         )
         val centerPanel = panel(
-            "Объекты",
-            VerticalLayout(objectCounter, Scroller(objectGallery).apply { setSizeFull() }).apply {
+            objectHeader,
+            VerticalLayout(objectGallery).apply {
                 setSizeFull()
                 isPadding = false
                 isSpacing = true
+                expand(objectGallery)
             }
         )
         val rightPanel = panel(
@@ -64,6 +65,7 @@ class MainView : VerticalLayout() {
                 setSizeFull()
                 isPadding = false
                 isSpacing = true
+                expand(propertyGrid)
             }
         )
 
@@ -90,6 +92,7 @@ class MainView : VerticalLayout() {
         projectList.style["gap"] = "10px"
         projectList.style["padding"] = "4px"
         projectList.style["box-sizing"] = "border-box"
+        projectList.style["overflow"] = "auto"
         projectList.setWidthFull()
     }
 
@@ -100,6 +103,7 @@ class MainView : VerticalLayout() {
         objectGallery.style["gap"] = "12px"
         objectGallery.style["padding"] = "4px"
         objectGallery.style["box-sizing"] = "border-box"
+        objectGallery.style["overflow"] = "auto"
         objectGallery.setSizeFull()
     }
 
@@ -126,7 +130,7 @@ class MainView : VerticalLayout() {
         selectedProject = project
         selectedObject = null
         renderProjects()
-        objectCounter.text = "${project.objects.size} объектов"
+        objectHeader.text = "Объекты (${project.objects.size})"
         renderObjects(project.objects)
         updateProperties(null)
     }
@@ -151,7 +155,7 @@ class MainView : VerticalLayout() {
     }
 
     private fun renderProjects() {
-        projectCounter.text = "${projects.size} проектов"
+        projectHeader.text = "Проекты (${projects.size})"
         projectList.removeAll()
         projects.forEach { project ->
             projectList.add(projectCard(project, project == selectedProject) { selectProject(project) })
@@ -251,8 +255,10 @@ class MainView : VerticalLayout() {
         )
     }
 
-    private fun panel(title: String, content: Component): VerticalLayout =
-        VerticalLayout(H4(title), content).apply {
+    private fun panel(title: String, content: Component): VerticalLayout = panel(H4(title), content)
+
+    private fun panel(title: Component, content: Component): VerticalLayout =
+        VerticalLayout(title, content).apply {
             setSizeFull()
             isPadding = true
             isSpacing = true
