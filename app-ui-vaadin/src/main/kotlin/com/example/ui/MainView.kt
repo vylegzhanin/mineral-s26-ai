@@ -744,16 +744,19 @@ class MainView : VerticalLayout() {
             ?: "white"
         val rawWidth = obj.properties["crop_width"]?.toIntOrNull() ?: 240
         val rawHeight = obj.properties["crop_height"]?.toIntOrNull() ?: 180
-        val displayHeight = 180
-        val scale = min(4.0, displayHeight.toDouble() / rawHeight.toDouble())
-        val displayWidth = max(80.0, rawWidth * scale).roundToInt()
+        val cardHeight = 180
+        val scale = min(4.0, cardHeight.toDouble() / rawHeight.toDouble())
+        val imageDisplayWidth = max(1.0, rawWidth * scale).roundToInt()
+        val imageDisplayHeight = max(1.0, rawHeight * scale).roundToInt()
+        val cardWidth = max(80.0, imageDisplayWidth.toDouble()).roundToInt()
 
         val image = Image(obj.previewUrl, obj.name).apply {
             style["display"] = "block"
-            style["width"] = "${displayWidth}px"
-            style["height"] = "${displayHeight}px"
+            style["width"] = "${imageDisplayWidth}px"
+            style["height"] = "${imageDisplayHeight}px"
             style["object-fit"] = "contain"
             style["border-radius"] = "10px"
+            style["image-rendering"] = "pixelated"
         }
 
         val cardTitle = Span(obj.properties["grain_class"] ?: obj.name).apply {
@@ -777,8 +780,8 @@ class MainView : VerticalLayout() {
             style["position"] = "relative"
             style["display"] = "inline-block"
             style["line-height"] = "0"
-            style["width"] = "${displayWidth}px"
-            style["height"] = "${displayHeight}px"
+            style["width"] = "${cardWidth}px"
+            style["height"] = "${cardHeight}px"
             style["border-radius"] = "10px"
             style["cursor"] = "pointer"
             style["overflow"] = "hidden"
