@@ -14,7 +14,6 @@ import com.vaadin.flow.component.notification.NotificationVariant
 import com.vaadin.flow.component.orderedlayout.FlexComponent
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
-import com.vaadin.flow.component.page.Push
 import com.vaadin.flow.component.splitlayout.SplitLayout
 import com.vaadin.flow.component.textfield.NumberField
 import com.vaadin.flow.component.textfield.TextArea
@@ -37,7 +36,6 @@ import kotlin.concurrent.thread
 import javax.imageio.ImageIO
 
 @Route("")
-@Push
 class MainView : VerticalLayout() {
 
     private val datasetsRoot: Path = Path.of("/siams/images")
