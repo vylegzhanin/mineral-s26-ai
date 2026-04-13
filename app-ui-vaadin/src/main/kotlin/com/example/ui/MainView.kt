@@ -1171,13 +1171,29 @@ class MainView : VerticalLayout() {
 
         fun applyLinkedColor(selectedGrainClass: String) {
             val normalizedValue = selectedGrainClass.trim()
+            val previousValue = obj.properties["grain_class"]?.trim().orEmpty()
             obj.properties["grain_class"] = normalizedValue
             colorByGrainClass[normalizedValue]?.let { nativeMaskColor ->
                 obj.properties["mask_color_rgb"] = nativeMaskColor
             }
             applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
             selectedProject?.let { refreshFilterOptions(it.objects) }
-            refreshObjectGallery(resetPaging = false)
+            val activeFilterValue = grainClassFilter.value?.trim().orEmpty()
+            val shouldKeepEditedObjectVisible =
+                ObjectFilter.GRAIN_CLASS in activeFilters &&
+                    activeFilterValue.isNotBlank() &&
+                    activeFilterValue == previousValue &&
+                    normalizedValue != activeFilterValue
+
+            if (shouldKeepEditedObjectVisible) {
+                if (normalizedValue.isBlank()) {
+                    grainClassFilter.clear()
+                } else {
+                    grainClassFilter.value = normalizedValue
+                }
+            } else {
+                refreshObjectGallery(resetPaging = false)
+            }
         }
 
         applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
