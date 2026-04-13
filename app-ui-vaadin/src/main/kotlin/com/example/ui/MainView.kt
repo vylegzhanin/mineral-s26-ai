@@ -54,6 +54,44 @@ class MainView : VerticalLayout() {
     private val objectHeader = H4("Объекты")
     private val projectList = com.vaadin.flow.component.html.Div()
     private val objectGallery = com.vaadin.flow.component.html.Div()
+    private val grainClassFilter = ComboBox<String>().apply {
+        placeholder = "Grain class"
+        isClearButtonVisible = true
+        setWidth("170px")
+    }
+    private val statusFilter = ComboBox<String>().apply {
+        placeholder = "Статус"
+        isClearButtonVisible = true
+        setWidth("150px")
+    }
+    private val confidenceFromFilter = NumberField().apply {
+        placeholder = "Уверенность от"
+        min = 0.0
+        max = 100.0
+        step = 1.0
+        setWidth("130px")
+    }
+    private val confidenceToFilter = NumberField().apply {
+        placeholder = "до"
+        min = 0.0
+        max = 100.0
+        step = 1.0
+        setWidth("85px")
+    }
+    private val analysisDateFromFilter = DatePicker().apply {
+        placeholder = "Дата с"
+        setWidth("145px")
+    }
+    private val analysisDateToFilter = DatePicker().apply {
+        placeholder = "по"
+        setWidth("125px")
+    }
+    private val reviewedFilter = ComboBox<String>().apply {
+        placeholder = "Проверено"
+        setItems("Да", "Нет")
+        isClearButtonVisible = true
+        setWidth("130px")
+    }
     private val selectedObjectTitle = H4("Выберите объект")
     private val propertyEditor = com.vaadin.flow.component.html.Div()
     private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
@@ -73,9 +111,10 @@ class MainView : VerticalLayout() {
         configureProjectList()
         configureObjectGallery()
         configurePropertyEditor()
+        initFilterListeners()
 
         val leftPanel = panel(projectHeaderWithActions(), projectList)
-        val centerPanel = panel(objectHeader, objectGallery)
+        val centerPanel = panel(objectHeaderWithFilters(), objectGallery)
         val rightPanel = panel(
             "Свойства объекта",
             VerticalLayout(selectedObjectTitle, propertyEditor).apply {
@@ -139,10 +178,9 @@ class MainView : VerticalLayout() {
         selectedProject = project
         selectedObject = null
         selectedObjectCard = null
-        visibleObjectLimit = minOf(OBJECT_PAGE_SIZE, project.objects.size)
         renderProjects()
-        objectHeader.text = "Объекты (${project.objects.size})"
-        renderObjects(project.objects)
+        refreshFilterOptions(project.objects)
+        refreshObjectGallery(resetPaging = true)
         updateProperties(null)
     }
 
@@ -202,6 +240,35 @@ class MainView : VerticalLayout() {
         }
     }
 
+    private fun objectHeaderWithFilters(): Component =
+        HorizontalLayout(
+            objectHeader,
+            HorizontalLayout(
+                grainClassFilter,
+                statusFilter,
+                confidenceFromFilter,
+                confidenceToFilter,
+                analysisDateFromFilter,
+                analysisDateToFilter,
+                reviewedFilter,
+                Button("Сброс") {
+                    clearFilters()
+                    refreshObjectGallery(resetPaging = true)
+                }
+            ).apply {
+                isPadding = false
+                isSpacing = true
+                style["flex-wrap"] = "wrap"
+                style["justify-content"] = "flex-end"
+            }
+        ).apply {
+            setWidthFull()
+            setAlignItems(FlexComponent.Alignment.CENTER)
+            justifyContentMode = FlexComponent.JustifyContentMode.BETWEEN
+            isPadding = false
+            isSpacing = true
+        }
+
     private fun projectHeaderWithActions(): Component =
         HorizontalLayout(projectHeader, Button("Импорт").apply {
             addClickListener { openImportDialog() }
@@ -212,6 +279,78 @@ class MainView : VerticalLayout() {
             isPadding = false
             isSpacing = true
         }
+
+    private fun clearFilters() {
+        grainClassFilter.clear()
+        statusFilter.clear()
+        confidenceFromFilter.clear()
+        confidenceToFilter.clear()
+        analysisDateFromFilter.clear()
+        analysisDateToFilter.clear()
+        reviewedFilter.clear()
+    }
+
+    private fun initFilterListeners() {
+        grainClassFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
+        statusFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
+        confidenceFromFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
+        confidenceToFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
+        analysisDateFromFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
+        analysisDateToFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
+        reviewedFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
+    }
+
+    private fun refreshFilterOptions(objects: List<DatasetObject>) {
+        grainClassFilter.setItems(objects.mapNotNull { it.properties["grain_class"] }.filter { it.isNotBlank() }.distinct().sorted())
+        statusFilter.setItems(objects.mapNotNull { it.properties["meta_status"] }.filter { it.isNotBlank() }.distinct().sorted())
+    }
+
+    private fun refreshObjectGallery(resetPaging: Boolean = false) {
+        val project = selectedProject ?: return
+        val filteredObjects = applyFilters(project.objects)
+        if (resetPaging) {
+            visibleObjectLimit = minOf(OBJECT_PAGE_SIZE, filteredObjects.size)
+        } else {
+            visibleObjectLimit = minOf(max(visibleObjectLimit, OBJECT_PAGE_SIZE), filteredObjects.size)
+        }
+
+        if (selectedObject != null && filteredObjects.none { it.id == selectedObject?.id }) {
+            selectedObject = null
+            selectedObjectCard = null
+            updateProperties(null)
+        }
+
+        objectHeader.text = "Объекты (${filteredObjects.size}/${project.objects.size})"
+        renderObjects(filteredObjects)
+    }
+
+    private fun applyFilters(objects: List<DatasetObject>): List<DatasetObject> {
+        val grainClass = grainClassFilter.value?.trim().orEmpty()
+        val status = statusFilter.value?.trim().orEmpty()
+        val confidenceFrom = confidenceFromFilter.value
+        val confidenceTo = confidenceToFilter.value
+        val analysisFrom = analysisDateFromFilter.value
+        val analysisTo = analysisDateToFilter.value
+        val reviewed = reviewedFilter.value
+
+        return objects.filter { obj ->
+            if (grainClass.isNotEmpty() && obj.properties["grain_class"] != grainClass) return@filter false
+            if (status.isNotEmpty() && obj.properties["meta_status"] != status) return@filter false
+
+            val confidence = obj.properties["meta_confidence"]?.toDoubleOrNull()
+            if (confidenceFrom != null && (confidence == null || confidence < confidenceFrom)) return@filter false
+            if (confidenceTo != null && (confidence == null || confidence > confidenceTo)) return@filter false
+
+            val analysisDate = obj.properties["meta_analysis_date"]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            if (analysisFrom != null && (analysisDate == null || analysisDate.isBefore(analysisFrom))) return@filter false
+            if (analysisTo != null && (analysisDate == null || analysisDate.isAfter(analysisTo))) return@filter false
+
+            val reviewedValue = obj.properties["meta_reviewed"]?.toBoolean() ?: false
+            if (reviewed == "Да" && !reviewedValue) return@filter false
+            if (reviewed == "Нет" && reviewedValue) return@filter false
+            true
+        }
+    }
 
     private fun openImportDialog() {
         val availableDatasets = listDatasetDirectories()
@@ -909,10 +1048,20 @@ class MainView : VerticalLayout() {
             isAllowCustomValue = true
             this.value = value
             setWidthFull()
-            addValueChangeListener { event -> obj.properties[name] = event.value ?: "" }
+            addValueChangeListener { event ->
+                obj.properties[name] = event.value ?: ""
+                if (name == "grain_class") {
+                    selectedProject?.let { refreshFilterOptions(it.objects) }
+                    refreshObjectGallery(resetPaging = false)
+                }
+            }
             addCustomValueSetListener { event ->
                 obj.properties[name] = event.detail
                 this.value = event.detail
+                if (name == "grain_class") {
+                    selectedProject?.let { refreshFilterOptions(it.objects) }
+                    refreshObjectGallery(resetPaging = false)
+                }
             }
         }
 
@@ -928,7 +1077,11 @@ class MainView : VerticalLayout() {
         val status = ComboBox<String>("Статус").apply {
             setItems("Черновик", "На проверке", "Подтвержден", "Отклонен")
             value = obj.properties["meta_status"] ?: "Черновик"
-            addValueChangeListener { obj.properties["meta_status"] = it.value ?: "" }
+            addValueChangeListener {
+                obj.properties["meta_status"] = it.value ?: ""
+                selectedProject?.let { project -> refreshFilterOptions(project.objects) }
+                refreshObjectGallery(resetPaging = false)
+            }
         }
 
         val confidence = NumberField("Уверенность, %").apply {
@@ -936,18 +1089,27 @@ class MainView : VerticalLayout() {
             min = 0.0
             max = 100.0
             step = 1.0
-            addValueChangeListener { obj.properties["meta_confidence"] = ((it.value ?: 0.0).toInt()).toString() }
+            addValueChangeListener {
+                obj.properties["meta_confidence"] = ((it.value ?: 0.0).toInt()).toString()
+                refreshObjectGallery(resetPaging = false)
+            }
         }
 
         val analysisDate = DatePicker("Дата анализа").apply {
             value = obj.properties["meta_analysis_date"]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
                 ?: LocalDate.now()
-            addValueChangeListener { obj.properties["meta_analysis_date"] = it.value?.toString().orEmpty() }
+            addValueChangeListener {
+                obj.properties["meta_analysis_date"] = it.value?.toString().orEmpty()
+                refreshObjectGallery(resetPaging = false)
+            }
         }
 
         val reviewed = Checkbox("Проверено оператором").apply {
             value = obj.properties["meta_reviewed"]?.toBoolean() ?: false
-            addValueChangeListener { obj.properties["meta_reviewed"] = it.value.toString() }
+            addValueChangeListener {
+                obj.properties["meta_reviewed"] = it.value.toString()
+                refreshObjectGallery(resetPaging = false)
+            }
         }
 
         form.add(status, confidence, analysisDate, reviewed)
