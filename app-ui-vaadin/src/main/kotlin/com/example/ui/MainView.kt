@@ -343,11 +343,19 @@ class MainView : VerticalLayout() {
         if (!Files.isDirectory(datasetsRoot)) {
             return emptyList()
         }
-        Files.list(datasetsRoot).use { stream ->
+        Files.walk(datasetsRoot).use { stream ->
             return stream
-                .filter { Files.isDirectory(it) }
+                .filter { Files.isDirectory(it) && it != datasetsRoot }
+                .filter { dir ->
+                    Files.list(dir).use { files ->
+                        files.anyMatch { file ->
+                            val name = file.fileName.toString()
+                            name.startsWith("img-") || name.startsWith("msk_rgb-")
+                        }
+                    }
+                }
                 .sorted()
-                .map { it.fileName.toString() }
+                .map { datasetsRoot.relativize(it).toString().replace('\\', '/') }
                 .collect(Collectors.toList())
         }
     }
