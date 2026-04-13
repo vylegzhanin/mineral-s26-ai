@@ -296,12 +296,13 @@ class MainView : VerticalLayout() {
                     }
 
                     val project = importedProject.getOrNull() ?: return@access
-                    projects.removeAll { it.id == project.id }
-                    projects.add(0, project)
+                    val projectWithResources = resolveProjectResources(project)
+                    projects.removeAll { it.id == projectWithResources.id }
+                    projects.add(0, projectWithResources)
                     renderProjects()
                     dialog.close()
                     Notification.show(
-                        "Импортировано: ${project.name}. Откройте проект для просмотра объектов.",
+                        "Импортировано: ${projectWithResources.name}. Откройте проект для просмотра объектов.",
                         3000,
                         Notification.Position.BOTTOM_START
                     )
@@ -408,7 +409,7 @@ class MainView : VerticalLayout() {
                 id = cached.id,
                 name = cached.name,
                 category = cached.category,
-                previewUrl = fileResourceUrl(cacheDir.resolve(cached.previewFileName)),
+                previewUrl = cacheDir.resolve(cached.previewFileName).toString(),
                 properties = cached.properties.toMutableMap()
             )
         }
@@ -418,9 +419,25 @@ class MainView : VerticalLayout() {
             name = datasetDirectoryName,
             type = "Импорт из /siams/images",
             source = datasetPath.toString(),
-            previewUrl = fileResourceUrl(projectPreview),
+            previewUrl = projectPreview.toString(),
             objects = objectsForUi
         )
+    }
+
+    private fun resolveProjectResources(project: DatasetProject): DatasetProject {
+        val resolvedPreview = resolvePreviewUrl(project.previewUrl)
+        val resolvedObjects = project.objects.map { obj ->
+            obj.copy(previewUrl = resolvePreviewUrl(obj.previewUrl))
+        }
+        return project.copy(previewUrl = resolvedPreview, objects = resolvedObjects)
+    }
+
+    private fun resolvePreviewUrl(rawValue: String): String {
+        val path = runCatching { Path.of(rawValue) }.getOrNull()
+        if (path != null && Files.exists(path)) {
+            return fileResourceUrl(path)
+        }
+        return rawValue
     }
 
     private fun extractObjectsFromPairToCache(
