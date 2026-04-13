@@ -8,6 +8,8 @@ import com.vaadin.flow.component.datepicker.DatePicker
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.formlayout.FormLayout
 import com.vaadin.flow.component.html.*
+import com.vaadin.flow.component.menubar.MenuBar
+import com.vaadin.flow.component.menubar.MenuItem
 import com.vaadin.flow.component.progressbar.ProgressBar
 import com.vaadin.flow.component.notification.Notification
 import com.vaadin.flow.component.notification.NotificationVariant
@@ -54,43 +56,52 @@ class MainView : VerticalLayout() {
     private val objectHeader = H4("Объекты")
     private val projectList = com.vaadin.flow.component.html.Div()
     private val objectGallery = com.vaadin.flow.component.html.Div()
+    private val activeFilters = linkedSetOf<ObjectFilter>()
+    private val filterMenuItems = mutableMapOf<ObjectFilter, MenuItem>()
+    private val filterControls = HorizontalLayout().apply {
+        isPadding = false
+        isSpacing = true
+        style["gap"] = "6px"
+        style["flex-wrap"] = "wrap"
+        style["justify-content"] = "flex-end"
+    }
     private val grainClassFilter = ComboBox<String>().apply {
-        placeholder = "Grain class"
+        placeholder = "Grain"
         isClearButtonVisible = true
-        setWidth("170px")
+        setWidth("130px")
     }
     private val statusFilter = ComboBox<String>().apply {
         placeholder = "Статус"
         isClearButtonVisible = true
-        setWidth("150px")
+        setWidth("120px")
     }
     private val confidenceFromFilter = NumberField().apply {
-        placeholder = "Уверенность от"
+        placeholder = "Ув. от"
         min = 0.0
         max = 100.0
         step = 1.0
-        setWidth("130px")
+        setWidth("94px")
     }
     private val confidenceToFilter = NumberField().apply {
         placeholder = "до"
         min = 0.0
         max = 100.0
         step = 1.0
-        setWidth("85px")
+        setWidth("72px")
     }
     private val analysisDateFromFilter = DatePicker().apply {
         placeholder = "Дата с"
-        setWidth("145px")
+        setWidth("122px")
     }
     private val analysisDateToFilter = DatePicker().apply {
         placeholder = "по"
-        setWidth("125px")
+        setWidth("108px")
     }
     private val reviewedFilter = ComboBox<String>().apply {
         placeholder = "Проверено"
         setItems("Да", "Нет")
         isClearButtonVisible = true
-        setWidth("130px")
+        setWidth("110px")
     }
     private val selectedObjectTitle = H4("Выберите объект")
     private val propertyEditor = com.vaadin.flow.component.html.Div()
@@ -244,13 +255,8 @@ class MainView : VerticalLayout() {
         HorizontalLayout(
             objectHeader,
             HorizontalLayout(
-                grainClassFilter,
-                statusFilter,
-                confidenceFromFilter,
-                confidenceToFilter,
-                analysisDateFromFilter,
-                analysisDateToFilter,
-                reviewedFilter,
+                filterAddMenu(),
+                filterControls,
                 Button("Сброс") {
                     clearFilters()
                     refreshObjectGallery(resetPaging = true)
@@ -258,8 +264,9 @@ class MainView : VerticalLayout() {
             ).apply {
                 isPadding = false
                 isSpacing = true
-                style["flex-wrap"] = "wrap"
+                style["gap"] = "6px"
                 style["justify-content"] = "flex-end"
+                style["align-items"] = "center"
             }
         ).apply {
             setWidthFull()
@@ -280,7 +287,92 @@ class MainView : VerticalLayout() {
             isSpacing = true
         }
 
+    private fun filterAddMenu(): MenuBar =
+        MenuBar().apply {
+            val root = addItem("Фильтр +")
+            root.subMenu.addItem("Grain class") { addFilter(ObjectFilter.GRAIN_CLASS) }.also {
+                filterMenuItems[ObjectFilter.GRAIN_CLASS] = it
+            }
+            root.subMenu.addItem("Статус") { addFilter(ObjectFilter.STATUS) }.also {
+                filterMenuItems[ObjectFilter.STATUS] = it
+            }
+            root.subMenu.addItem("Уверенность") { addFilter(ObjectFilter.CONFIDENCE) }.also {
+                filterMenuItems[ObjectFilter.CONFIDENCE] = it
+            }
+            root.subMenu.addItem("Дата анализа") { addFilter(ObjectFilter.ANALYSIS_DATE) }.also {
+                filterMenuItems[ObjectFilter.ANALYSIS_DATE] = it
+            }
+            root.subMenu.addItem("Проверено оператором") { addFilter(ObjectFilter.REVIEWED) }.also {
+                filterMenuItems[ObjectFilter.REVIEWED] = it
+            }
+        }
+
+    private fun addFilter(filter: ObjectFilter) {
+        if (!activeFilters.add(filter)) return
+        rebuildVisibleFilterControls()
+        refreshObjectGallery(resetPaging = true)
+    }
+
+    private fun removeFilter(filter: ObjectFilter) {
+        if (!activeFilters.remove(filter)) return
+        when (filter) {
+            ObjectFilter.GRAIN_CLASS -> grainClassFilter.clear()
+            ObjectFilter.STATUS -> statusFilter.clear()
+            ObjectFilter.CONFIDENCE -> {
+                confidenceFromFilter.clear()
+                confidenceToFilter.clear()
+            }
+            ObjectFilter.ANALYSIS_DATE -> {
+                analysisDateFromFilter.clear()
+                analysisDateToFilter.clear()
+            }
+            ObjectFilter.REVIEWED -> reviewedFilter.clear()
+        }
+        rebuildVisibleFilterControls()
+        refreshObjectGallery(resetPaging = true)
+    }
+
+    private fun rebuildVisibleFilterControls() {
+        filterControls.removeAll()
+        activeFilters.forEach { filter ->
+            filterControls.add(
+                when (filter) {
+                    ObjectFilter.GRAIN_CLASS -> compactFilterGroup("Grain", grainClassFilter, filter)
+                    ObjectFilter.STATUS -> compactFilterGroup("Статус", statusFilter, filter)
+                    ObjectFilter.CONFIDENCE -> compactPairFilterGroup("Уверенность", confidenceFromFilter, confidenceToFilter, filter)
+                    ObjectFilter.ANALYSIS_DATE -> compactPairFilterGroup("Дата", analysisDateFromFilter, analysisDateToFilter, filter)
+                    ObjectFilter.REVIEWED -> compactFilterGroup("Проверено", reviewedFilter, filter)
+                }
+            )
+        }
+        filterMenuItems.forEach { (filter, item) -> item.isEnabled = filter !in activeFilters }
+    }
+
+    private fun compactFilterGroup(title: String, field: Component, filter: ObjectFilter): Component =
+        HorizontalLayout(Span(title), field, removeFilterButton(filter)).apply {
+            isPadding = false
+            isSpacing = true
+            style["gap"] = "4px"
+            setAlignItems(FlexComponent.Alignment.CENTER)
+        }
+
+    private fun compactPairFilterGroup(title: String, first: Component, second: Component, filter: ObjectFilter): Component =
+        HorizontalLayout(Span(title), first, second, removeFilterButton(filter)).apply {
+            isPadding = false
+            isSpacing = true
+            style["gap"] = "3px"
+            setAlignItems(FlexComponent.Alignment.CENTER)
+        }
+
+    private fun removeFilterButton(filter: ObjectFilter): Button =
+        Button("×") { removeFilter(filter) }.apply {
+            element.setAttribute("title", "Убрать фильтр")
+            style["min-width"] = "24px"
+            style["padding"] = "0 6px"
+        }
+
     private fun clearFilters() {
+        activeFilters.clear()
         grainClassFilter.clear()
         statusFilter.clear()
         confidenceFromFilter.clear()
@@ -288,6 +380,7 @@ class MainView : VerticalLayout() {
         analysisDateFromFilter.clear()
         analysisDateToFilter.clear()
         reviewedFilter.clear()
+        rebuildVisibleFilterControls()
     }
 
     private fun initFilterListeners() {
@@ -334,20 +427,20 @@ class MainView : VerticalLayout() {
         val reviewed = reviewedFilter.value
 
         return objects.filter { obj ->
-            if (grainClass.isNotEmpty() && obj.properties["grain_class"] != grainClass) return@filter false
-            if (status.isNotEmpty() && obj.properties["meta_status"] != status) return@filter false
+            if (ObjectFilter.GRAIN_CLASS in activeFilters && grainClass.isNotEmpty() && obj.properties["grain_class"] != grainClass) return@filter false
+            if (ObjectFilter.STATUS in activeFilters && status.isNotEmpty() && obj.properties["meta_status"] != status) return@filter false
 
             val confidence = obj.properties["meta_confidence"]?.toDoubleOrNull()
-            if (confidenceFrom != null && (confidence == null || confidence < confidenceFrom)) return@filter false
-            if (confidenceTo != null && (confidence == null || confidence > confidenceTo)) return@filter false
+            if (ObjectFilter.CONFIDENCE in activeFilters && confidenceFrom != null && (confidence == null || confidence < confidenceFrom)) return@filter false
+            if (ObjectFilter.CONFIDENCE in activeFilters && confidenceTo != null && (confidence == null || confidence > confidenceTo)) return@filter false
 
             val analysisDate = obj.properties["meta_analysis_date"]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-            if (analysisFrom != null && (analysisDate == null || analysisDate.isBefore(analysisFrom))) return@filter false
-            if (analysisTo != null && (analysisDate == null || analysisDate.isAfter(analysisTo))) return@filter false
+            if (ObjectFilter.ANALYSIS_DATE in activeFilters && analysisFrom != null && (analysisDate == null || analysisDate.isBefore(analysisFrom))) return@filter false
+            if (ObjectFilter.ANALYSIS_DATE in activeFilters && analysisTo != null && (analysisDate == null || analysisDate.isAfter(analysisTo))) return@filter false
 
             val reviewedValue = obj.properties["meta_reviewed"]?.toBoolean() ?: false
-            if (reviewed == "Да" && !reviewedValue) return@filter false
-            if (reviewed == "Нет" && reviewedValue) return@filter false
+            if (ObjectFilter.REVIEWED in activeFilters && reviewed == "Да" && !reviewedValue) return@filter false
+            if (ObjectFilter.REVIEWED in activeFilters && reviewed == "Нет" && reviewedValue) return@filter false
             true
         }
     }
@@ -1206,5 +1299,13 @@ private data class DatasetFolderOption(
     val relativePath: String,
     val isImported: Boolean
 )
+
+private enum class ObjectFilter {
+    GRAIN_CLASS,
+    STATUS,
+    CONFIDENCE,
+    ANALYSIS_DATE,
+    REVIEWED
+}
 
 private fun demoProjects(): List<DatasetProject> = emptyList()
