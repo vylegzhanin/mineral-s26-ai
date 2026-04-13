@@ -34,6 +34,9 @@ import java.util.stream.Collectors
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 import javax.imageio.ImageIO
 
 @Route("")
@@ -539,7 +542,9 @@ class MainView : VerticalLayout() {
                         "source_image_file" to sourceImagePath.fileName.toString(),
                         "mask_rgb_file" to maskImagePath.fileName.toString(),
                         "grain_class" to grainClass,
-                        "mask_color_rgb" to "0x${color.toString(16).padStart(6, '0').uppercase()}"
+                        "mask_color_rgb" to "0x${color.toString(16).padStart(6, '0').uppercase()}",
+                        "crop_width" to (component.maxX - component.minX + 1).toString(),
+                        "crop_height" to (component.maxY - component.minY + 1).toString()
                     )
                 )
             }
@@ -737,12 +742,17 @@ class MainView : VerticalLayout() {
             ?.takeIf { it.length == 6 && it.all { ch -> ch.isDigit() || ch.lowercaseChar() in 'a'..'f' } }
             ?.let { "#$it" }
             ?: "white"
+        val rawWidth = obj.properties["crop_width"]?.toIntOrNull() ?: 240
+        val rawHeight = obj.properties["crop_height"]?.toIntOrNull() ?: 180
+        val scale = min(4.0, max(1.0, 220.0 / rawWidth.toDouble()))
+        val displayWidth = (rawWidth * scale).roundToInt()
+        val displayHeight = (rawHeight * scale).roundToInt()
 
         val image = Image(obj.previewUrl, obj.name).apply {
             style["display"] = "block"
-            style["width"] = "240px"
-            style["height"] = "180px"
-            style["object-fit"] = "cover"
+            style["width"] = "${displayWidth}px"
+            style["height"] = "${displayHeight}px"
+            style["object-fit"] = "contain"
             style["border-radius"] = "10px"
         }
 
@@ -767,10 +777,15 @@ class MainView : VerticalLayout() {
             style["position"] = "relative"
             style["display"] = "inline-block"
             style["line-height"] = "0"
+            style["width"] = "${displayWidth}px"
+            style["height"] = "${displayHeight}px"
             style["border-radius"] = "10px"
             style["cursor"] = "pointer"
             style["overflow"] = "hidden"
             style["background"] = "black"
+            style["display"] = "flex"
+            style["align-items"] = "center"
+            style["justify-content"] = "center"
             styleObjectSelection(selected, style)
             addClickListener { onClick() }
         }
@@ -844,6 +859,7 @@ class MainView : VerticalLayout() {
             "material" -> comboEditor(name, value, obj, listOf("руда", "концентрат", "шламы"))
             "brightness" -> comboEditor(name, value, obj, listOf("низкая", "средняя", "высокая"))
             "contrast" -> comboEditor(name, value, obj, listOf("низкий", "средний", "высокий"))
+            "mask_color_rgb" -> colorPreviewEditor(value)
             "notes" -> TextArea().apply {
                 this.value = value
                 isClearButtonVisible = true
@@ -858,6 +874,32 @@ class MainView : VerticalLayout() {
                 addValueChangeListener { obj.properties[name] = it.value }
             }
         }
+
+    private fun colorPreviewEditor(value: String): Component {
+        val colorHex = value.removePrefix("0x")
+            .takeIf { it.length == 6 && it.all { ch -> ch.isDigit() || ch.lowercaseChar() in 'a'..'f' } }
+            ?.let { "#$it" }
+            ?: "#000000"
+        val swatch = com.vaadin.flow.component.html.Div().apply {
+            style["width"] = "28px"
+            style["height"] = "28px"
+            style["border-radius"] = "6px"
+            style["border"] = "1px solid var(--lumo-contrast-40pct)"
+            style["background"] = colorHex
+            style["flex-shrink"] = "0"
+        }
+        val text = TextField().apply {
+            this.value = value
+            isReadOnly = true
+            setWidthFull()
+        }
+        return HorizontalLayout(swatch, text).apply {
+            isPadding = false
+            isSpacing = true
+            setWidthFull()
+            setAlignItems(FlexComponent.Alignment.CENTER)
+        }
+    }
 
     private fun comboEditor(name: String, value: String, obj: DatasetObject, options: List<String>): ComboBox<String> =
         ComboBox<String>().apply {
