@@ -167,8 +167,10 @@ class MainView : VerticalLayout() {
     private fun configureObjectGallery() {
         objectGallery.style["display"] = "flex"
         objectGallery.style["flex-wrap"] = "wrap"
+        objectGallery.style["justify-content"] = "space-between"
         objectGallery.style["align-items"] = "flex-start"
-        objectGallery.style["gap"] = "12px"
+        objectGallery.style["row-gap"] = "12px"
+        objectGallery.style["column-gap"] = "12px"
         objectGallery.style["padding"] = "4px"
         objectGallery.style["box-sizing"] = "border-box"
         objectGallery.style["align-content"] = "flex-start"
@@ -1011,6 +1013,7 @@ class MainView : VerticalLayout() {
         return com.vaadin.flow.component.html.Div(image, overlay).apply {
             style["position"] = "relative"
             style["display"] = "inline-block"
+            style["flex"] = "0 0 auto"
             style["line-height"] = "0"
             style["width"] = "${cardWidth}px"
             style["height"] = "${cardHeight}px"
