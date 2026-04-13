@@ -69,7 +69,9 @@ class MainView : VerticalLayout() {
     private val grainClassFilter = ComboBox<String>().apply {
         placeholder = "Grain"
         isClearButtonVisible = true
-        setWidth("130px")
+        setWidth("240px")
+        style["min-width"] = "180px"
+        style["max-width"] = "320px"
         setItemLabelGenerator { it }
     }
     private val statusFilter = ComboBox<String>().apply {
