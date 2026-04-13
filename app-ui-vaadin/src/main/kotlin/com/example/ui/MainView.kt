@@ -732,6 +732,12 @@ class MainView : VerticalLayout() {
     }
 
     private fun objectCard(obj: DatasetObject, selected: Boolean, onClick: () -> Unit): com.vaadin.flow.component.html.Div {
+        val titleColor = obj.properties["mask_color_rgb"]
+            ?.removePrefix("0x")
+            ?.takeIf { it.length == 6 && it.all { ch -> ch.isDigit() || ch.lowercaseChar() in 'a'..'f' } }
+            ?.let { "#$it" }
+            ?: "white"
+
         val image = Image(obj.previewUrl, obj.name).apply {
             style["display"] = "block"
             style["width"] = "240px"
@@ -743,7 +749,7 @@ class MainView : VerticalLayout() {
         val cardTitle = Span(obj.properties["grain_class"] ?: obj.name).apply {
             style["font-weight"] = "600"
             style["display"] = "block"
-            style["color"] = "white"
+            style["color"] = titleColor
             style["line-height"] = "1.25"
         }
 
@@ -764,6 +770,7 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "10px"
             style["cursor"] = "pointer"
             style["overflow"] = "hidden"
+            style["background"] = "black"
             styleObjectSelection(selected, style)
             addClickListener { onClick() }
         }
