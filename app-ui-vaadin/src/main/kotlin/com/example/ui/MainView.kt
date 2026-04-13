@@ -22,6 +22,7 @@ import com.vaadin.flow.dom.Style
 import com.vaadin.flow.server.StreamResource
 import com.vaadin.flow.router.Route
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.slf4j.LoggerFactory
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
@@ -39,6 +40,7 @@ import javax.imageio.ImageIO
 class MainView : VerticalLayout() {
     companion object {
         private const val OBJECT_PAGE_SIZE = 200
+        private val log = LoggerFactory.getLogger(MainView::class.java)
     }
 
     private val datasetsRoot: Path = Path.of("/siams/images")
@@ -216,8 +218,14 @@ class MainView : VerticalLayout() {
             return
         }
 
-        val datasetSelector = ComboBox<String>("Каталог датасета").apply {
-            setItems(availableDatasets)
+        val importedDatasets = importedDatasetRelativePaths()
+        val datasetOptions = availableDatasets.map { DatasetFolderOption(it, importedDatasets.contains(it)) }
+
+        val datasetSelector = ComboBox<DatasetFolderOption>("Каталог датасета").apply {
+            setItems(datasetOptions)
+            setItemLabelGenerator { option ->
+                if (option.isImported) "${option.relativePath} (уже импортирован)" else option.relativePath
+            }
             isAllowCustomValue = false
             isClearButtonVisible = true
             placeholder = "Выберите каталог"
@@ -257,7 +265,7 @@ class MainView : VerticalLayout() {
             }
         }
         importButton.addClickListener {
-            val selectedFolder = datasetSelector.value
+            val selectedFolder = datasetSelector.value?.relativePath
             if (selectedFolder.isNullOrBlank()) {
                 Notification.show("Сначала выберите каталог датасета.", 2500, Notification.Position.MIDDLE)
                     .addThemeVariants(NotificationVariant.LUMO_CONTRAST)
@@ -306,6 +314,7 @@ class MainView : VerticalLayout() {
                             dialog.close()
                             return@access
                         }
+                        log.error("Не удалось импортировать датасет {}", selectedFolder, error)
                         Notification.show(
                             "Не удалось импортировать датасет: ${error.message ?: "неизвестная ошибка"}",
                             4500,
@@ -338,6 +347,13 @@ class MainView : VerticalLayout() {
 
         dialog.open()
     }
+
+    private fun importedDatasetRelativePaths(): Set<String> =
+        projects.mapNotNull { project ->
+            runCatching { Path.of(project.source) }.getOrNull()
+                ?.takeIf { it.startsWith(datasetsRoot) }
+                ?.let { datasetsRoot.relativize(it).toString().replace('\\', '/') }
+        }.toSet()
 
     private fun listDatasetDirectories(): List<String> {
         if (!Files.isDirectory(datasetsRoot)) {
@@ -970,6 +986,11 @@ private data class ImportProgress(
     val current: Int,
     val total: Int,
     val indeterminate: Boolean
+)
+
+private data class DatasetFolderOption(
+    val relativePath: String,
+    val isImported: Boolean
 )
 
 private fun demoProjects(): List<DatasetProject> = emptyList()
