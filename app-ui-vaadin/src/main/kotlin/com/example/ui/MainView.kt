@@ -43,7 +43,7 @@ class MainView : VerticalLayout() {
 
     private val datasetsRoot: Path = Path.of("/siams/images")
     private val cacheRoot: Path = Path.of("/siams/chache")
-    private val projects = demoProjects().toMutableList()
+    private val projects = mutableListOf<DatasetProject>()
 
     private val projectHeader = H4("Проекты")
     private val objectHeader = H4("Объекты")
@@ -963,95 +963,4 @@ private data class ImportProgress(
     val indeterminate: Boolean
 )
 
-private fun demoProjects(): List<DatasetProject> = listOf(
-    DatasetProject(
-        id = "bgok-60-100",
-        name = "BGOK 60.+100",
-        type = "Шлифы (микроскопия)",
-        source = "bgok-lab-60-plus-100",
-        previewUrl = "/images/projects/bgok-60-plus-100.svg",
-        objects = listOf(
-            DatasetObject(
-                id = "bgok-grain-001",
-                name = "Зерно BGOK #001",
-                category = "OreGrain",
-                previewUrl = "/images/objects/bgok-grain-001.svg",
-                properties = mutableMapOf(
-                    "project" to "BGOK 60.+100",
-                    "size_fraction" to "60.+100",
-                    "grain_class" to "светлое вкрапление",
-                    "shape" to "угловатое"
-                )
-            ),
-            DatasetObject(
-                id = "bgok-grain-002",
-                name = "Зерно BGOK #002",
-                category = "OreGrain",
-                previewUrl = "/images/objects/bgok-grain-002.svg",
-                properties = mutableMapOf(
-                    "project" to "BGOK 60.+100",
-                    "size_fraction" to "60.+100",
-                    "grain_class" to "серое зерно",
-                    "texture" to "штриховая"
-                )
-            ),
-            DatasetObject(
-                id = "bgok-grain-003",
-                name = "Зерно BGOK #003",
-                category = "OreGrain",
-                previewUrl = "/images/objects/bgok-grain-003.svg",
-                properties = mutableMapOf(
-                    "project" to "BGOK 60.+100",
-                    "size_fraction" to "60.+100",
-                    "grain_class" to "сросток",
-                    "notes" to "кластер мелких зерен"
-                )
-            )
-        )
-    ),
-    DatasetProject(
-        id = "kgmk-conc",
-        name = "KGMK.conc",
-        type = "Шлифы (концентрат)",
-        source = "kgmk-concentrate-series",
-        previewUrl = "/images/projects/kgmk-conc.svg",
-        objects = listOf(
-            DatasetObject(
-                id = "kgmk-grain-001",
-                name = "Зерно KGMK #001",
-                category = "OreGrain",
-                previewUrl = "/images/objects/kgmk-grain-001.svg",
-                properties = mutableMapOf(
-                    "project" to "KGMK.conc",
-                    "material" to "концентрат",
-                    "brightness" to "низкая",
-                    "fractures" to "выраженные"
-                )
-            ),
-            DatasetObject(
-                id = "kgmk-grain-002",
-                name = "Зерно KGMK #002",
-                category = "OreGrain",
-                previewUrl = "/images/objects/kgmk-grain-002.svg",
-                properties = mutableMapOf(
-                    "project" to "KGMK.conc",
-                    "material" to "концентрат",
-                    "grain_class" to "светлое зерно",
-                    "contrast" to "высокий"
-                )
-            ),
-            DatasetObject(
-                id = "kgmk-grain-003",
-                name = "Зерно KGMK #003",
-                category = "OreGrain",
-                previewUrl = "/images/objects/kgmk-grain-003.svg",
-                properties = mutableMapOf(
-                    "project" to "KGMK.conc",
-                    "material" to "концентрат",
-                    "grain_class" to "темное зерно",
-                    "notes" to "неоднородный край"
-                )
-            )
-        )
-    )
-)
+private fun demoProjects(): List<DatasetProject> = emptyList()
