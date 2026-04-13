@@ -1,25 +1,36 @@
 package com.example.ui
 
 import com.vaadin.flow.component.Component
+import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.checkbox.Checkbox
 import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.component.datepicker.DatePicker
+import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.formlayout.FormLayout
 import com.vaadin.flow.component.html.*
+import com.vaadin.flow.component.notification.Notification
+import com.vaadin.flow.component.notification.NotificationVariant
 import com.vaadin.flow.component.orderedlayout.FlexComponent
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.splitlayout.SplitLayout
 import com.vaadin.flow.component.textfield.NumberField
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.dom.Style
+import com.vaadin.flow.server.StreamResource
 import com.vaadin.flow.router.Route
+import com.fasterxml.jackson.databind.ObjectMapper
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.LocalDate
+import java.util.stream.Collectors
 
 @Route("")
 class MainView : VerticalLayout() {
 
-    private val projects = demoProjects()
+    private val datasetsRoot: Path = Path.of("/siams/images")
+    private val projects = demoProjects().toMutableList()
 
     private val projectHeader = H4("Проекты")
     private val objectHeader = H4("Объекты")
@@ -42,7 +53,7 @@ class MainView : VerticalLayout() {
         configureObjectGallery()
         configurePropertyEditor()
 
-        val leftPanel = panel(projectHeader, projectList)
+        val leftPanel = panel(projectHeaderWithActions(), projectList)
         val centerPanel = panel(objectHeader, objectGallery)
         val rightPanel = panel(
             "Свойства объекта",
@@ -138,6 +149,156 @@ class MainView : VerticalLayout() {
             projectList.add(projectCard(project, project == selectedProject) { selectProject(project) })
         }
     }
+
+    private fun projectHeaderWithActions(): Component =
+        HorizontalLayout(projectHeader, Button("Импорт").apply {
+            addClickListener { openImportDialog() }
+        }).apply {
+            setWidthFull()
+            setAlignItems(FlexComponent.Alignment.CENTER)
+            justifyContentMode = FlexComponent.JustifyContentMode.BETWEEN
+            isPadding = false
+            isSpacing = true
+        }
+
+    private fun openImportDialog() {
+        val availableDatasets = listDatasetDirectories()
+        if (availableDatasets.isEmpty()) {
+            Notification.show("В каталоге $datasetsRoot нет датасетов для импорта.", 3500, Notification.Position.MIDDLE)
+                .addThemeVariants(NotificationVariant.LUMO_WARNING)
+            return
+        }
+
+        val datasetSelector = ComboBox<String>("Каталог датасета").apply {
+            setItems(availableDatasets)
+            isAllowCustomValue = false
+            isClearButtonVisible = true
+            placeholder = "Выберите каталог"
+            setWidthFull()
+        }
+
+        val dialog = Dialog().apply {
+            headerTitle = "Импорт проекта"
+            add(VerticalLayout(datasetSelector).apply {
+                isPadding = false
+                isSpacing = true
+                setWidth("460px")
+            })
+        }
+
+        val importButton = Button("Импортировать") {
+            val selectedFolder = datasetSelector.value
+            if (selectedFolder.isNullOrBlank()) {
+                Notification.show("Сначала выберите каталог датасета.", 2500, Notification.Position.MIDDLE)
+                    .addThemeVariants(NotificationVariant.LUMO_CONTRAST)
+                return@Button
+            }
+
+            val importedProject = runCatching { importProjectFromDataset(selectedFolder) }.getOrElse { error ->
+                Notification.show(
+                    "Не удалось импортировать датасет: ${error.message ?: "неизвестная ошибка"}",
+                    4500,
+                    Notification.Position.MIDDLE
+                ).addThemeVariants(NotificationVariant.LUMO_ERROR)
+                return@Button
+            }
+
+            projects.removeAll { it.id == importedProject.id }
+            projects.add(0, importedProject)
+            renderProjects()
+            selectProject(importedProject)
+            dialog.close()
+            Notification.show("Импортировано: ${importedProject.name}", 2500, Notification.Position.BOTTOM_START)
+        }
+
+        dialog.footer.add(
+            Button("Отмена") { dialog.close() },
+            importButton
+        )
+
+        dialog.open()
+    }
+
+    private fun listDatasetDirectories(): List<String> {
+        if (!Files.isDirectory(datasetsRoot)) {
+            return emptyList()
+        }
+        Files.list(datasetsRoot).use { stream ->
+            return stream
+                .filter { Files.isDirectory(it) }
+                .sorted()
+                .map { it.fileName.toString() }
+                .collect(Collectors.toList())
+        }
+    }
+
+    private fun importProjectFromDataset(datasetDirectoryName: String): DatasetProject {
+        val datasetPath = datasetsRoot.resolve(datasetDirectoryName)
+        require(Files.isDirectory(datasetPath)) { "Каталог $datasetPath не найден." }
+
+        val rawImages = Files.list(datasetPath).use { stream ->
+            stream.filter { it.fileName.toString().startsWith("img-") && it.fileName.toString().endsWith(".png") }
+                .sorted()
+                .collect(Collectors.toList())
+        }
+        val rgbMasks = Files.list(datasetPath).use { stream ->
+            stream.filter { it.fileName.toString().startsWith("msk_rgb-") && it.fileName.toString().endsWith(".png") }
+                .sorted()
+                .collect(Collectors.toList())
+        }
+
+        require(rawImages.isNotEmpty()) { "В каталоге нет файлов img-*.png." }
+        require(rgbMasks.isNotEmpty()) { "В каталоге нет файлов msk_rgb-*.png." }
+
+        val legendFile = datasetPath.resolve("legend.json")
+        val classes = if (Files.exists(legendFile)) {
+            parseLegend(legendFile)
+        } else {
+            emptyList()
+        }
+
+        val rawBySuffix = rawImages.associateBy { it.fileName.toString().removePrefix("img-").removeSuffix(".png") }
+        val datasetObjects = rgbMasks.mapIndexed { index, maskPath ->
+            val suffix = maskPath.fileName.toString().removePrefix("msk_rgb-").removeSuffix(".png")
+            val sourceImage = rawBySuffix[suffix]
+            DatasetObject(
+                id = "${datasetDirectoryName}-$suffix",
+                name = "Объект #${index + 1} ($suffix)",
+                category = "MaskObject",
+                previewUrl = fileResourceUrl(maskPath),
+                properties = mutableMapOf(
+                    "dataset" to datasetDirectoryName,
+                    "mask_rgb_file" to maskPath.fileName.toString(),
+                    "source_image_file" to (sourceImage?.fileName?.toString() ?: ""),
+                    "classes" to if (classes.isEmpty()) "не указаны" else classes.joinToString(", ")
+                )
+            )
+        }
+
+        val projectPreview = rawImages.firstOrNull() ?: rgbMasks.first()
+
+        return DatasetProject(
+            id = "dataset-$datasetDirectoryName",
+            name = datasetDirectoryName,
+            type = "Импорт из /siams/images",
+            source = datasetPath.toString(),
+            previewUrl = fileResourceUrl(projectPreview),
+            objects = datasetObjects
+        )
+    }
+
+    private fun parseLegend(legendFile: Path): List<String> {
+        val rootNode = ObjectMapper().readTree(legendFile.toFile())
+        if (!rootNode.isArray) return emptyList()
+        return rootNode
+            .mapNotNull { node -> node.path("name").takeIf { !it.isMissingNode && !it.isNull }?.asText() }
+    }
+
+    private fun fileResourceUrl(file: Path): String =
+        StreamResource(file.fileName.toString()) { Files.newInputStream(file) }.let { resource ->
+            val currentUi = ui.orElseThrow { IllegalStateException("UI context is not available for resource registration.") }
+            currentUi.session.resourceRegistry.registerResource(resource).resourceUri.toString()
+        }
 
     private fun projectCard(project: DatasetProject, selected: Boolean, onClick: () -> Unit): Component {
         val image = Image(project.previewUrl, project.name).apply {
