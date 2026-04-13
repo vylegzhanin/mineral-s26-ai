@@ -115,13 +115,13 @@ class MainView : VerticalLayout() {
     }
 
     private fun configureObjectGallery() {
-        objectGallery.style["display"] = "flex"
-        objectGallery.style["flex-wrap"] = "wrap"
-        objectGallery.style["align-items"] = "flex-start"
+        objectGallery.style["display"] = "grid"
+        objectGallery.style["grid-template-columns"] = "repeat(auto-fill, minmax(220px, 1fr))"
+        objectGallery.style["align-items"] = "stretch"
         objectGallery.style["gap"] = "12px"
         objectGallery.style["padding"] = "4px"
         objectGallery.style["box-sizing"] = "border-box"
-        objectGallery.style["align-content"] = "flex-start"
+        objectGallery.style["align-content"] = "start"
         objectGallery.setWidthFull()
     }
 
@@ -748,7 +748,6 @@ class MainView : VerticalLayout() {
         val scale = min(4.0, cardHeight.toDouble() / rawHeight.toDouble())
         val imageDisplayWidth = max(1.0, rawWidth * scale).roundToInt()
         val imageDisplayHeight = max(1.0, rawHeight * scale).roundToInt()
-        val cardWidth = max(80.0, imageDisplayWidth.toDouble()).roundToInt()
 
         val image = Image(obj.previewUrl, obj.name).apply {
             style["display"] = "block"
@@ -780,7 +779,7 @@ class MainView : VerticalLayout() {
             style["position"] = "relative"
             style["display"] = "inline-block"
             style["line-height"] = "0"
-            style["width"] = "${cardWidth}px"
+            style["width"] = "100%"
             style["height"] = "${cardHeight}px"
             style["border-radius"] = "10px"
             style["cursor"] = "pointer"
