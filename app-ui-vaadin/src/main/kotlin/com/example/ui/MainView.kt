@@ -530,11 +530,12 @@ class MainView : VerticalLayout() {
 
                 objects += CachedDatasetObject(
                     id = "$datasetDirectoryName-$suffix-$grainCounter",
-                    name = "Зерно $suffix #$grainCounter",
+                    name = grainClass,
                     category = "OreGrain",
                     previewFileName = previewFileName,
                     properties = mapOf(
                         "dataset" to datasetDirectoryName,
+                        "grain_id" to "$suffix-$grainCounter",
                         "source_image_file" to sourceImagePath.fileName.toString(),
                         "mask_rgb_file" to maskImagePath.fileName.toString(),
                         "grain_class" to grainClass,
@@ -739,21 +740,21 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "10px"
         }
 
-        val name = Span(obj.name).apply {
+        val cardTitle = Span(obj.properties["grain_class"] ?: obj.name).apply {
             style["font-weight"] = "600"
             style["display"] = "block"
             style["color"] = "white"
             style["line-height"] = "1.25"
         }
 
-        val overlay = com.vaadin.flow.component.html.Div(name).apply {
+        val overlay = com.vaadin.flow.component.html.Div(cardTitle).apply {
             style["position"] = "absolute"
             style["left"] = "0"
             style["right"] = "0"
-            style["bottom"] = "0"
-            style["padding"] = "10px 12px 8px"
-            style["background"] = "linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0.08))"
-            style["border-radius"] = "0 0 10px 10px"
+            style["top"] = "0"
+            style["padding"] = "8px 12px 8px"
+            style["background"] = "linear-gradient(to bottom, rgba(0,0,0,0.75), rgba(0,0,0,0.15))"
+            style["border-radius"] = "10px 10px 0 0"
         }
 
         return com.vaadin.flow.component.html.Div(image, overlay).apply {
