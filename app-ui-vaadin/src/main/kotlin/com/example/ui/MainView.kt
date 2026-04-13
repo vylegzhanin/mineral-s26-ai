@@ -1095,6 +1095,7 @@ class MainView : VerticalLayout() {
 
         obj.properties.entries
             .sortedBy { it.key }
+            .filterNot { it.key == "mask_color_rgb" }
             .forEach { (name, value) ->
                 form.addFormItem(propertyInput(name, value, obj), prettyLabel(name))
             }
@@ -1105,7 +1106,7 @@ class MainView : VerticalLayout() {
     private fun propertyInput(name: String, value: String, obj: DatasetObject): Component =
         when (name) {
             "size_fraction" -> comboEditor(name, value, obj, listOf("40.+60", "60.+100", "-100"))
-            "grain_class" -> comboEditor(name, value, obj, grainClassOptionsForCurrentDataset(value))
+            "grain_class" -> grainClassEditor(value, obj)
             "shape" -> comboEditor(name, value, obj, listOf("угловатое", "окатанное", "удлиненное"))
             "material" -> comboEditor(name, value, obj, listOf("руда", "концентрат", "шламы"))
             "brightness" -> comboEditor(name, value, obj, listOf("низкая", "средняя", "высокая"))
@@ -1126,6 +1127,35 @@ class MainView : VerticalLayout() {
             }
         }
 
+    private fun grainClassEditor(value: String, obj: DatasetObject): ComboBox<String> {
+        val colorByGrainClass = grainClassColorMapForCurrentDataset()
+        val editor = ComboBox<String>().apply {
+            setItems(grainClassOptionsForCurrentDataset(value))
+            isAllowCustomValue = true
+            this.value = value
+            setWidthFull()
+        }
+
+        fun applyLinkedColor(selectedGrainClass: String) {
+            val normalizedValue = selectedGrainClass.trim()
+            obj.properties["grain_class"] = normalizedValue
+            colorByGrainClass[normalizedValue]?.let { nativeMaskColor ->
+                obj.properties["mask_color_rgb"] = nativeMaskColor
+            }
+            applyGrainClassColor(editor, obj.properties["mask_color_rgb"])
+            selectedProject?.let { refreshFilterOptions(it.objects) }
+            refreshObjectGallery(resetPaging = false)
+        }
+
+        applyGrainClassColor(editor, obj.properties["mask_color_rgb"])
+        editor.addValueChangeListener { applyLinkedColor(it.value ?: "") }
+        editor.addCustomValueSetListener {
+            editor.value = it.detail
+            applyLinkedColor(it.detail)
+        }
+        return editor
+    }
+
     private fun grainClassOptionsForCurrentDataset(currentValue: String): List<String> {
         val datasetOptions = selectedProject
             ?.objects
@@ -1138,6 +1168,39 @@ class MainView : VerticalLayout() {
         return (datasetOptions + currentValue.trim())
             .filter { it.isNotBlank() }
             .distinct()
+    }
+
+    private fun grainClassColorMapForCurrentDataset(): Map<String, String> =
+        selectedProject
+            ?.objects
+            ?.mapNotNull { candidate ->
+                val grainClass = candidate.properties["grain_class"]?.trim().orEmpty()
+                val maskColor = normalizeMaskColor(candidate.properties["mask_color_rgb"]).orEmpty()
+                if (grainClass.isBlank() || maskColor.isBlank()) return@mapNotNull null
+                grainClass to maskColor
+            }
+            ?.toMap()
+            .orEmpty()
+
+    private fun normalizeMaskColor(rawColor: String?): String? {
+        val clean = rawColor
+            ?.removePrefix("0x")
+            ?.removePrefix("#")
+            ?.trim()
+            ?.lowercase()
+            ?: return null
+        if (clean.length != 6 || clean.any { !it.isDigit() && it !in 'a'..'f' }) return null
+        return "0x${clean.uppercase()}"
+    }
+
+    private fun applyGrainClassColor(editor: ComboBox<String>, rawMaskColor: String?) {
+        val maskColor = normalizeMaskColor(rawMaskColor)
+        if (maskColor == null) {
+            editor.style.remove("color")
+            return
+        }
+        val cssHex = "#" + maskColor.removePrefix("0x")
+        editor.style["color"] = cssHex
     }
 
     private fun colorPreviewEditor(value: String): Component {
