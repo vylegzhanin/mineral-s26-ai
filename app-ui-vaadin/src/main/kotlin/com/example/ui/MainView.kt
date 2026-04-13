@@ -347,12 +347,13 @@ class MainView : VerticalLayout() {
             return stream
                 .filter { Files.isDirectory(it) && it != datasetsRoot }
                 .filter { dir ->
-                    Files.list(dir).use { files ->
-                        files.anyMatch { file ->
-                            val name = file.fileName.toString()
-                            name.startsWith("img-") || name.startsWith("msk_rgb-")
-                        }
+                    val hasLegend = Files.exists(dir.resolve("legend.json"))
+                    val fileNames = Files.list(dir).use { files ->
+                        files.map { it.fileName.toString() }.collect(Collectors.toList())
                     }
+                    val hasImages = fileNames.any { it.startsWith("img-") && it.endsWith(".png") }
+                    val hasMasks = fileNames.any { it.startsWith("msk_rgb-") && it.endsWith(".png") }
+                    hasLegend && hasImages && hasMasks
                 }
                 .sorted()
                 .map { datasetsRoot.relativize(it).toString().replace('\\', '/') }
