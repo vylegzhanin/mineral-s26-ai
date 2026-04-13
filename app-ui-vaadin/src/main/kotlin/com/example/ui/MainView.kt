@@ -31,6 +31,8 @@ import java.util.ArrayDeque
 import java.security.MessageDigest
 import java.util.stream.Collectors
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
 
 @Route("")
@@ -211,8 +213,31 @@ class MainView : VerticalLayout() {
                 setWidth("460px")
             })
         }
+        val progressText = Paragraph("Ожидание запуска…").apply {
+            isVisible = false
+            style["margin"] = "0"
+        }
+        val progressBar = ProgressBar().apply {
+            isVisible = false
+            isIndeterminate = true
+            setWidthFull()
+        }
+        (dialog.children.findFirst().orElse(null) as? VerticalLayout)?.add(progressText, progressBar)
+
+        val cancelRequested = AtomicBoolean(false)
+        var importInProgress = false
 
         val importButton = Button("Импортировать")
+        val cancelButton = Button("Закрыть")
+        cancelButton.addClickListener {
+            if (importInProgress) {
+                cancelRequested.set(true)
+                cancelButton.isEnabled = false
+                progressText.text = "Остановка импорта…"
+            } else {
+                dialog.close()
+            }
+        }
         importButton.addClickListener {
             val selectedFolder = datasetSelector.value
             if (selectedFolder.isNullOrBlank()) {
@@ -220,30 +245,24 @@ class MainView : VerticalLayout() {
                     .addThemeVariants(NotificationVariant.LUMO_CONTRAST)
                 return@addClickListener
             }
+            if (importInProgress) {
+                return@addClickListener
+            }
 
             val currentUi = ui.orElseThrow { IllegalStateException("UI context is not available for import.") }
+            importInProgress = true
+            cancelRequested.set(false)
             importButton.isEnabled = false
             datasetSelector.isEnabled = false
-            val progressText = Span("Подготовка импорта…")
-            val progressBar = ProgressBar().apply {
-                isIndeterminate = true
-                setWidthFull()
-            }
-            val progressDialog = Dialog(
-                VerticalLayout(progressText, progressBar).apply {
-                    isPadding = false
-                    isSpacing = true
-                    setWidth("420px")
-                }
-            ).apply {
-                headerTitle = "Импорт проекта"
-                isCloseOnEsc = false
-                isCloseOnOutsideClick = false
-            }
-            progressDialog.open()
+            progressText.isVisible = true
+            progressBar.isVisible = true
+            progressText.text = "Подготовка импорта…"
+            progressBar.isIndeterminate = true
+            cancelButton.text = "Остановить"
+            cancelButton.isEnabled = true
 
             CompletableFuture.supplyAsync {
-                importProjectFromDataset(selectedFolder) { progress ->
+                importProjectFromDataset(selectedFolder, cancelRequested) { progress ->
                     currentUi.access {
                         progressText.text = progress.message
                         progressBar.isIndeterminate = progress.indeterminate
@@ -254,13 +273,21 @@ class MainView : VerticalLayout() {
                 }
             }.whenComplete { importedProject, throwable ->
                 currentUi.access {
+                    importInProgress = false
                     importButton.isEnabled = true
                     datasetSelector.isEnabled = true
-                    progressDialog.close()
+                    cancelButton.text = "Закрыть"
+                    cancelButton.isEnabled = true
 
                     if (throwable != null) {
+                        val error = throwable.cause ?: throwable
+                        if (error is CancellationException) {
+                            Notification.show("Импорт остановлен пользователем.", 2500, Notification.Position.MIDDLE)
+                                .addThemeVariants(NotificationVariant.LUMO_CONTRAST)
+                            return@access
+                        }
                         Notification.show(
-                            "Не удалось импортировать датасет: ${throwable.cause?.message ?: throwable.message ?: "неизвестная ошибка"}",
+                            "Не удалось импортировать датасет: ${error.message ?: "неизвестная ошибка"}",
                             4500,
                             Notification.Position.MIDDLE
                         ).addThemeVariants(NotificationVariant.LUMO_ERROR)
@@ -281,7 +308,7 @@ class MainView : VerticalLayout() {
         }
 
         dialog.footer.add(
-            Button("Отмена") { dialog.close() },
+            cancelButton,
             importButton
         )
 
@@ -303,12 +330,15 @@ class MainView : VerticalLayout() {
 
     private fun importProjectFromDataset(
         datasetDirectoryName: String,
+        cancelRequested: AtomicBoolean = AtomicBoolean(false),
         onProgress: (ImportProgress) -> Unit = {}
     ): DatasetProject {
+        throwIfCancelled(cancelRequested)
         onProgress(ImportProgress("Проверка каталога…", 0, 0, true))
         val datasetPath = datasetsRoot.resolve(datasetDirectoryName)
         require(Files.isDirectory(datasetPath)) { "Каталог $datasetPath не найден." }
 
+        throwIfCancelled(cancelRequested)
         onProgress(ImportProgress("Чтение списка файлов…", 0, 0, true))
         val rawImages = Files.list(datasetPath).use { stream ->
             stream.filter { it.fileName.toString().startsWith("img-") && it.fileName.toString().endsWith(".png") }
@@ -352,6 +382,7 @@ class MainView : VerticalLayout() {
             cachedObjects
         } else {
             val generated = commonSuffixes.flatMapIndexed { index, suffix ->
+                throwIfCancelled(cancelRequested)
                 onProgress(ImportProgress("Обработка масок: ${index + 1}/${commonSuffixes.size}", index, commonSuffixes.size, false))
                 extractObjectsFromPairToCache(
                     datasetDirectoryName = datasetDirectoryName,
@@ -359,7 +390,8 @@ class MainView : VerticalLayout() {
                     sourceImagePath = rawBySuffix.getValue(suffix),
                     maskImagePath = maskBySuffix.getValue(suffix),
                     legend = legend,
-                    cacheDir = cacheDir
+                    cacheDir = cacheDir,
+                    cancelRequested = cancelRequested
                 )
             }
             onProgress(ImportProgress("Сохранение кэша…", commonSuffixes.size, commonSuffixes.size, false))
@@ -395,7 +427,8 @@ class MainView : VerticalLayout() {
         sourceImagePath: Path,
         maskImagePath: Path,
         legend: Map<Int, String>,
-        cacheDir: Path
+        cacheDir: Path,
+        cancelRequested: AtomicBoolean
     ): List<CachedDatasetObject> {
         val source = ImageIO.read(sourceImagePath.toFile())
             ?: throw IllegalArgumentException("Не удалось прочитать изображение ${sourceImagePath.fileName}")
@@ -413,6 +446,7 @@ class MainView : VerticalLayout() {
         var grainCounter = 0
 
         for (y in 0 until height) {
+            throwIfCancelled(cancelRequested)
             for (x in 0 until width) {
                 val color = mask.rgbNoAlpha(x, y)
                 if (color == 0x000000) continue
@@ -555,6 +589,12 @@ class MainView : VerticalLayout() {
         digest.update(file.fileName.toString().toByteArray())
         digest.update(attrs.size().toString().toByteArray())
         digest.update(attrs.lastModifiedTime().toMillis().toString().toByteArray())
+    }
+
+    private fun throwIfCancelled(cancelRequested: AtomicBoolean) {
+        if (cancelRequested.get()) {
+            throw CancellationException("Импорт отменён.")
+        }
     }
 
     private fun saveCachedObjects(manifestPath: Path, objects: List<CachedDatasetObject>) {
