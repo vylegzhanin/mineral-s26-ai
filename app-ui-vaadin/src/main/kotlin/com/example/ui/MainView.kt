@@ -59,11 +59,14 @@ class MainView : VerticalLayout() {
     private val activeFilters = linkedSetOf<ObjectFilter>()
     private val filterMenuItems = mutableMapOf<ObjectFilter, MenuItem>()
     private val filterControls = HorizontalLayout().apply {
+        setWidthFull()
         isPadding = false
         isSpacing = true
         style["gap"] = "6px"
         style["flex-wrap"] = "wrap"
         style["justify-content"] = "flex-end"
+        style["align-content"] = "flex-start"
+        style["min-width"] = "0"
     }
     private val grainClassFilter = ComboBox<String>().apply {
         placeholder = "Grain"
@@ -267,6 +270,8 @@ class MainView : VerticalLayout() {
                 style["gap"] = "6px"
                 style["justify-content"] = "flex-end"
                 style["align-items"] = "center"
+                setWidthFull()
+                setFlexGrow(1.0, filterControls)
             }
         ).apply {
             setWidthFull()
