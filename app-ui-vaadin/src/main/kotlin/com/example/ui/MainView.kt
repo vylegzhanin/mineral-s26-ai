@@ -228,14 +228,13 @@ class MainView : VerticalLayout() {
         var importInProgress = false
 
         val importButton = Button("Импортировать")
-        val cancelButton = Button("Закрыть")
-        cancelButton.addClickListener {
-            if (importInProgress) {
+        val closeButton = Button("Закрыть") { dialog.close() }
+        val stopButton = Button("Остановить").apply {
+            isVisible = false
+            addClickListener {
                 cancelRequested.set(true)
-                cancelButton.isEnabled = false
+                isEnabled = false
                 progressText.text = "Остановка импорта…"
-            } else {
-                dialog.close()
             }
         }
         importButton.addClickListener {
@@ -258,8 +257,8 @@ class MainView : VerticalLayout() {
             progressBar.isVisible = true
             progressText.text = "Подготовка импорта…"
             progressBar.isIndeterminate = true
-            cancelButton.text = "Остановить"
-            cancelButton.isEnabled = true
+            stopButton.isVisible = true
+            stopButton.isEnabled = true
 
             thread(name = "dataset-import-$selectedFolder", isDaemon = true) {
                 val importedProject = runCatching {
@@ -277,14 +276,15 @@ class MainView : VerticalLayout() {
                     importInProgress = false
                     importButton.isEnabled = true
                     datasetSelector.isEnabled = true
-                    cancelButton.text = "Закрыть"
-                    cancelButton.isEnabled = true
+                    stopButton.isVisible = false
+                    stopButton.isEnabled = true
 
                     importedProject.exceptionOrNull()?.let { throwable ->
                         val error = throwable.cause ?: throwable
                         if (error is CancellationException) {
                             Notification.show("Импорт остановлен пользователем.", 2500, Notification.Position.MIDDLE)
                                 .addThemeVariants(NotificationVariant.LUMO_CONTRAST)
+                            dialog.close()
                             return@access
                         }
                         Notification.show(
@@ -292,6 +292,7 @@ class MainView : VerticalLayout() {
                             4500,
                             Notification.Position.MIDDLE
                         ).addThemeVariants(NotificationVariant.LUMO_ERROR)
+                        dialog.close()
                         return@access
                     }
 
@@ -311,7 +312,8 @@ class MainView : VerticalLayout() {
         }
 
         dialog.footer.add(
-            cancelButton,
+            closeButton,
+            stopButton,
             importButton
         )
 
