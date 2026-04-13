@@ -5,11 +5,11 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.checkbox.Checkbox
 import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.component.datepicker.DatePicker
+import com.vaadin.flow.component.contextmenu.MenuItem
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.formlayout.FormLayout
 import com.vaadin.flow.component.html.*
 import com.vaadin.flow.component.menubar.MenuBar
-import com.vaadin.flow.component.menubar.MenuItem
 import com.vaadin.flow.component.progressbar.ProgressBar
 import com.vaadin.flow.component.notification.Notification
 import com.vaadin.flow.component.notification.NotificationVariant
