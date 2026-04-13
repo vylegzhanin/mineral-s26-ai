@@ -37,6 +37,9 @@ import javax.imageio.ImageIO
 
 @Route("")
 class MainView : VerticalLayout() {
+    companion object {
+        private const val OBJECT_PAGE_SIZE = 200
+    }
 
     private val datasetsRoot: Path = Path.of("/siams/images")
     private val cacheRoot: Path = Path.of("/siams/chache")
@@ -50,6 +53,7 @@ class MainView : VerticalLayout() {
     private val propertyEditor = com.vaadin.flow.component.html.Div()
     private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
     private var selectedObjectCard: com.vaadin.flow.component.html.Div? = null
+    private var visibleObjectLimit: Int = OBJECT_PAGE_SIZE
 
     private var selectedProject: DatasetProject? = null
     private var selectedObject: DatasetObject? = null
@@ -130,6 +134,7 @@ class MainView : VerticalLayout() {
         selectedProject = project
         selectedObject = null
         selectedObjectCard = null
+        visibleObjectLimit = minOf(OBJECT_PAGE_SIZE, project.objects.size)
         renderProjects()
         objectHeader.text = "Объекты (${project.objects.size})"
         renderObjects(project.objects)
@@ -151,13 +156,27 @@ class MainView : VerticalLayout() {
             return
         }
 
-        objects.forEach { obj ->
+        val visibleObjects = objects.take(visibleObjectLimit)
+        visibleObjects.forEach { obj ->
             val card = objectCard(obj, obj == selectedObject) { selectObject(obj) }
             objectCardsById[obj.id] = card
             if (obj == selectedObject) {
                 selectedObjectCard = card
             }
             objectGallery.add(card)
+        }
+
+        if (objects.size > visibleObjects.size) {
+            val showMoreButton = Button("Показать ещё (${objects.size - visibleObjects.size})") {
+                visibleObjectLimit = minOf(visibleObjectLimit + OBJECT_PAGE_SIZE, objects.size)
+                renderObjects(objects)
+            }
+            objectGallery.add(
+                com.vaadin.flow.component.html.Div(showMoreButton).apply {
+                    style["width"] = "100%"
+                    style["padding"] = "8px 4px"
+                }
+            )
         }
     }
 
