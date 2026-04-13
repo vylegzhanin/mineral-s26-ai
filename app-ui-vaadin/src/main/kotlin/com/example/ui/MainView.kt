@@ -455,6 +455,18 @@ class MainView : VerticalLayout() {
 
         objectHeader.text = "Объекты (${filteredObjects.size}/${project.objects.size})"
         renderObjects(filteredObjects)
+        selectedObject?.let { selected ->
+            if (filteredObjects.any { it.id == selected.id }) {
+                updateObjectSelection(selected)
+                scrollSelectedObjectCardIntoView()
+            }
+        }
+    }
+
+    private fun scrollSelectedObjectCardIntoView() {
+        selectedObjectCard?.element?.executeJs(
+            "this.scrollIntoView({block:'nearest', inline:'nearest', behavior:'smooth'});"
+        )
     }
 
     private fun applyFilters(objects: List<DatasetObject>): List<DatasetObject> {
