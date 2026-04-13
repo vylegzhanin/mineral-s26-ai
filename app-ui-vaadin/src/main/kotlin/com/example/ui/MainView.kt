@@ -342,7 +342,7 @@ class MainView : VerticalLayout() {
         activeFilters.forEach { filter ->
             filterControls.add(
                 when (filter) {
-                    ObjectFilter.GRAIN_CLASS -> compactFilterGroup("Grain", grainClassFilter, filter)
+                    ObjectFilter.GRAIN_CLASS -> compactFilterGroup("", grainClassFilter, filter)
                     ObjectFilter.STATUS -> compactFilterGroup("Статус", statusFilter, filter)
                     ObjectFilter.CONFIDENCE -> compactPairFilterGroup("Уверенность", confidenceFromFilter, confidenceToFilter, filter)
                     ObjectFilter.ANALYSIS_DATE -> compactPairFilterGroup("Дата", analysisDateFromFilter, analysisDateToFilter, filter)
@@ -354,11 +354,15 @@ class MainView : VerticalLayout() {
     }
 
     private fun compactFilterGroup(title: String, field: Component, filter: ObjectFilter): Component =
-        HorizontalLayout(Span(title), field, removeFilterButton(filter)).apply {
+        HorizontalLayout().apply {
             isPadding = false
             isSpacing = true
             style["gap"] = "4px"
             setAlignItems(FlexComponent.Alignment.CENTER)
+            if (title.isNotBlank()) {
+                add(Span(title))
+            }
+            add(field, removeFilterButton(filter))
         }
 
     private fun compactPairFilterGroup(title: String, first: Component, second: Component, filter: ObjectFilter): Component =
@@ -429,7 +433,8 @@ class MainView : VerticalLayout() {
         grainClassFilter.setRenderer(ComponentRenderer { grainClass ->
             grainClassOptionView(grainClass, grainClassColors[grainClass])
         })
-        applyColorIconToCombo(grainClassFilter, grainClassColors[currentGrainClassFilter])
+        val actualGrainClassValue = grainClassFilter.value?.trim().orEmpty()
+        applyColorIconToCombo(grainClassFilter, grainClassColors[actualGrainClassValue])
         statusFilter.setItems(statusItems)
     }
 
