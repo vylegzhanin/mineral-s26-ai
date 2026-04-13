@@ -744,9 +744,9 @@ class MainView : VerticalLayout() {
             ?: "white"
         val rawWidth = obj.properties["crop_width"]?.toIntOrNull() ?: 240
         val rawHeight = obj.properties["crop_height"]?.toIntOrNull() ?: 180
-        val scale = min(4.0, max(1.0, 220.0 / rawWidth.toDouble()))
-        val displayWidth = (rawWidth * scale).roundToInt()
-        val displayHeight = (rawHeight * scale).roundToInt()
+        val displayHeight = 180
+        val scale = min(4.0, displayHeight.toDouble() / rawHeight.toDouble())
+        val displayWidth = max(80.0, rawWidth * scale).roundToInt()
 
         val image = Image(obj.previewUrl, obj.name).apply {
             style["display"] = "block"
@@ -888,10 +888,9 @@ class MainView : VerticalLayout() {
             style["background"] = colorHex
             style["flex-shrink"] = "0"
         }
-        val text = TextField().apply {
-            this.value = value
-            isReadOnly = true
-            setWidthFull()
+        val text = Span(value).apply {
+            style["font-family"] = "monospace"
+            style["font-size"] = "var(--lumo-font-size-m)"
         }
         return HorizontalLayout(swatch, text).apply {
             isPadding = false
