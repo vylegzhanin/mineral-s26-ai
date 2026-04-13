@@ -20,6 +20,7 @@ import com.vaadin.flow.component.splitlayout.SplitLayout
 import com.vaadin.flow.component.textfield.NumberField
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
+import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.dom.Style
 import com.vaadin.flow.server.StreamResource
 import com.vaadin.flow.router.Route
@@ -69,6 +70,7 @@ class MainView : VerticalLayout() {
         placeholder = "Grain"
         isClearButtonVisible = true
         setWidth("130px")
+        setItemLabelGenerator { it }
     }
     private val statusFilter = ComboBox<String>().apply {
         placeholder = "Статус"
@@ -385,7 +387,11 @@ class MainView : VerticalLayout() {
     }
 
     private fun initFilterListeners() {
-        grainClassFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
+        grainClassFilter.addValueChangeListener {
+            val selectedGrainClass = it.value?.trim().orEmpty()
+            applyColorIconToCombo(grainClassFilter, grainClassColorMapForCurrentDataset()[selectedGrainClass])
+            refreshObjectGallery(resetPaging = true)
+        }
         statusFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
         confidenceFromFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
         confidenceToFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
@@ -397,6 +403,14 @@ class MainView : VerticalLayout() {
     private fun refreshFilterOptions(objects: List<DatasetObject>) {
         val currentGrainClassFilter = grainClassFilter.value?.trim().orEmpty()
         val currentStatusFilter = statusFilter.value?.trim().orEmpty()
+        val grainClassColors = objects
+            .mapNotNull { candidate ->
+                val grainClass = candidate.properties["grain_class"]?.trim().orEmpty()
+                val maskColor = normalizeMaskColor(candidate.properties["mask_color_rgb"]).orEmpty()
+                if (grainClass.isBlank() || maskColor.isBlank()) return@mapNotNull null
+                grainClass to maskColor
+            }
+            .toMap()
 
         val grainClassItems = (objects.mapNotNull { it.properties["grain_class"] } + currentGrainClassFilter)
             .map { it.trim() }
@@ -410,6 +424,10 @@ class MainView : VerticalLayout() {
             .sorted()
 
         grainClassFilter.setItems(grainClassItems)
+        grainClassFilter.setRenderer(ComponentRenderer { grainClass ->
+            grainClassOptionView(grainClass, grainClassColors[grainClass])
+        })
+        applyColorIconToCombo(grainClassFilter, grainClassColors[currentGrainClassFilter])
         statusFilter.setItems(statusItems)
     }
 
@@ -540,12 +558,16 @@ class MainView : VerticalLayout() {
             thread(name = "dataset-import-$selectedFolder", isDaemon = true) {
                 val importedProject = runCatching {
                     importProjectFromDataset(selectedFolder, cancelRequested) { progress ->
-                        currentUi.access {
-                            progressText.text = progress.message
-                            progressBar.isIndeterminate = progress.indeterminate
-                            if (!progress.indeterminate && progress.total > 0) {
-                                progressBar.value = progress.current.toDouble() / progress.total.toDouble()
+                        runCatching {
+                            currentUi.accessSynchronously {
+                                progressText.text = progress.message
+                                progressBar.isIndeterminate = progress.indeterminate
+                                if (!progress.indeterminate && progress.total > 0) {
+                                    progressBar.value = progress.current.toDouble() / progress.total.toDouble()
+                                }
                             }
+                        }.onFailure { updateError ->
+                            log.debug("Не удалось обновить прогресс импорта в UI: {}", updateError.message)
                         }
                     }
                 }
@@ -1134,6 +1156,10 @@ class MainView : VerticalLayout() {
             isAllowCustomValue = true
             this.value = value
             setWidthFull()
+            setItemLabelGenerator { it }
+            setRenderer(ComponentRenderer { grainClass ->
+                grainClassOptionView(grainClass, colorByGrainClass[grainClass])
+            })
         }
 
         fun applyLinkedColor(selectedGrainClass: String) {
@@ -1142,12 +1168,12 @@ class MainView : VerticalLayout() {
             colorByGrainClass[normalizedValue]?.let { nativeMaskColor ->
                 obj.properties["mask_color_rgb"] = nativeMaskColor
             }
-            applyGrainClassColor(editor, obj.properties["mask_color_rgb"])
+            applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
             selectedProject?.let { refreshFilterOptions(it.objects) }
             refreshObjectGallery(resetPaging = false)
         }
 
-        applyGrainClassColor(editor, obj.properties["mask_color_rgb"])
+        applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
         editor.addValueChangeListener { applyLinkedColor(it.value ?: "") }
         editor.addCustomValueSetListener {
             editor.value = it.detail
@@ -1193,14 +1219,36 @@ class MainView : VerticalLayout() {
         return "0x${clean.uppercase()}"
     }
 
-    private fun applyGrainClassColor(editor: ComboBox<String>, rawMaskColor: String?) {
+    private fun applyColorIconToCombo(editor: ComboBox<String>, rawMaskColor: String?) {
         val maskColor = normalizeMaskColor(rawMaskColor)
         if (maskColor == null) {
-            editor.style.remove("color")
+            editor.prefixComponent = null
             return
         }
-        val cssHex = "#" + maskColor.removePrefix("0x")
-        editor.style["color"] = cssHex
+        editor.prefixComponent = colorDot(maskColor)
+    }
+
+    private fun grainClassOptionView(grainClass: String, rawMaskColor: String?): Component =
+        HorizontalLayout(colorDot(rawMaskColor), Span(grainClass)).apply {
+            isPadding = false
+            isSpacing = true
+            setAlignItems(FlexComponent.Alignment.CENTER)
+            style["gap"] = "8px"
+        }
+
+    private fun colorDot(rawMaskColor: String?): Component {
+        val maskColor = normalizeMaskColor(rawMaskColor)
+        val cssHex = if (maskColor == null) "transparent" else "#" + maskColor.removePrefix("0x")
+        val borderColor = if (maskColor == null) "var(--lumo-contrast-30pct)" else "rgba(255,255,255,0.35)"
+        return com.vaadin.flow.component.html.Div().apply {
+            style["width"] = "10px"
+            style["height"] = "10px"
+            style["border-radius"] = "999px"
+            style["background"] = cssHex
+            style["border"] = "1px solid $borderColor"
+            style["display"] = "inline-block"
+            style["flex-shrink"] = "0"
+        }
     }
 
     private fun colorPreviewEditor(value: String): Component {
