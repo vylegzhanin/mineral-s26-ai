@@ -1091,7 +1091,7 @@ class MainView : VerticalLayout() {
     private fun propertyInput(name: String, value: String, obj: DatasetObject): Component =
         when (name) {
             "size_fraction" -> comboEditor(name, value, obj, listOf("40.+60", "60.+100", "-100"))
-            "grain_class" -> comboEditor(name, value, obj, listOf("светлое зерно", "темное зерно", "сросток", "серое зерно"))
+            "grain_class" -> comboEditor(name, value, obj, grainClassOptionsForCurrentDataset(value))
             "shape" -> comboEditor(name, value, obj, listOf("угловатое", "окатанное", "удлиненное"))
             "material" -> comboEditor(name, value, obj, listOf("руда", "концентрат", "шламы"))
             "brightness" -> comboEditor(name, value, obj, listOf("низкая", "средняя", "высокая"))
@@ -1111,6 +1111,20 @@ class MainView : VerticalLayout() {
                 addValueChangeListener { obj.properties[name] = it.value }
             }
         }
+
+    private fun grainClassOptionsForCurrentDataset(currentValue: String): List<String> {
+        val datasetOptions = selectedProject
+            ?.objects
+            ?.mapNotNull { it.properties["grain_class"]?.trim() }
+            ?.filter { it.isNotBlank() }
+            ?.distinct()
+            ?.sorted()
+            .orEmpty()
+
+        return (datasetOptions + currentValue.trim())
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
 
     private fun colorPreviewEditor(value: String): Component {
         val colorHex = value.removePrefix("0x")
