@@ -30,9 +30,9 @@ import java.time.LocalDate
 import java.util.ArrayDeque
 import java.security.MessageDigest
 import java.util.stream.Collectors
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 import javax.imageio.ImageIO
 
 @Route("")
@@ -261,17 +261,18 @@ class MainView : VerticalLayout() {
             cancelButton.text = "Остановить"
             cancelButton.isEnabled = true
 
-            CompletableFuture.supplyAsync {
-                importProjectFromDataset(selectedFolder, cancelRequested) { progress ->
-                    currentUi.access {
-                        progressText.text = progress.message
-                        progressBar.isIndeterminate = progress.indeterminate
-                        if (!progress.indeterminate && progress.total > 0) {
-                            progressBar.value = progress.current.toDouble() / progress.total.toDouble()
+            thread(name = "dataset-import-$selectedFolder", isDaemon = true) {
+                val importedProject = runCatching {
+                    importProjectFromDataset(selectedFolder, cancelRequested) { progress ->
+                        currentUi.access {
+                            progressText.text = progress.message
+                            progressBar.isIndeterminate = progress.indeterminate
+                            if (!progress.indeterminate && progress.total > 0) {
+                                progressBar.value = progress.current.toDouble() / progress.total.toDouble()
+                            }
                         }
                     }
                 }
-            }.whenComplete { importedProject, throwable ->
                 currentUi.access {
                     importInProgress = false
                     importButton.isEnabled = true
@@ -279,7 +280,7 @@ class MainView : VerticalLayout() {
                     cancelButton.text = "Закрыть"
                     cancelButton.isEnabled = true
 
-                    if (throwable != null) {
+                    importedProject.exceptionOrNull()?.let { throwable ->
                         val error = throwable.cause ?: throwable
                         if (error is CancellationException) {
                             Notification.show("Импорт остановлен пользователем.", 2500, Notification.Position.MIDDLE)
@@ -294,12 +295,13 @@ class MainView : VerticalLayout() {
                         return@access
                     }
 
-                    projects.removeAll { it.id == importedProject.id }
-                    projects.add(0, importedProject)
+                    val project = importedProject.getOrNull() ?: return@access
+                    projects.removeAll { it.id == project.id }
+                    projects.add(0, project)
                     renderProjects()
                     dialog.close()
                     Notification.show(
-                        "Импортировано: ${importedProject.name}. Откройте проект для просмотра объектов.",
+                        "Импортировано: ${project.name}. Откройте проект для просмотра объектов.",
                         3000,
                         Notification.Position.BOTTOM_START
                     )
