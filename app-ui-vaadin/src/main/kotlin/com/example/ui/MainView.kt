@@ -27,6 +27,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
 import java.util.ArrayDeque
+import java.security.MessageDigest
 import java.util.stream.Collectors
 import javax.imageio.ImageIO
 
@@ -34,6 +35,7 @@ import javax.imageio.ImageIO
 class MainView : VerticalLayout() {
 
     private val datasetsRoot: Path = Path.of("/siams/images")
+    private val cacheRoot: Path = Path.of("/siams/chache")
     private val projects = demoProjects().toMutableList()
 
     private val projectHeader = H4("Проекты")
@@ -266,17 +268,44 @@ class MainView : VerticalLayout() {
         val commonSuffixes = rawBySuffix.keys.intersect(maskBySuffix.keys).sorted()
         require(commonSuffixes.isNotEmpty()) { "Не найдено пар img-*.png и msk_rgb-*.png с одинаковым индексом." }
 
-        val datasetObjects = commonSuffixes.flatMap { suffix ->
-            extractObjectsFromPair(
-                datasetDirectoryName = datasetDirectoryName,
-                suffix = suffix,
-                sourceImagePath = rawBySuffix.getValue(suffix),
-                maskImagePath = maskBySuffix.getValue(suffix),
-                legend = legend
-            )
+        val datasetSignature = buildDatasetSignature(
+            datasetPath = datasetPath,
+            sourceBySuffix = rawBySuffix,
+            maskBySuffix = maskBySuffix,
+            commonSuffixes = commonSuffixes
+        )
+        val cacheDir = cacheRoot.resolve("$datasetDirectoryName-$datasetSignature")
+        Files.createDirectories(cacheDir)
+        val manifestPath = cacheDir.resolve("manifest.json")
+
+        val cachedObjects = if (Files.exists(manifestPath)) loadCachedObjects(manifestPath) else emptyList()
+        val resolvedObjects = if (cachedObjects.isNotEmpty() && cachedObjects.all { Files.exists(cacheDir.resolve(it.previewFileName)) }) {
+            cachedObjects
+        } else {
+            val generated = commonSuffixes.flatMap { suffix ->
+                extractObjectsFromPairToCache(
+                    datasetDirectoryName = datasetDirectoryName,
+                    suffix = suffix,
+                    sourceImagePath = rawBySuffix.getValue(suffix),
+                    maskImagePath = maskBySuffix.getValue(suffix),
+                    legend = legend,
+                    cacheDir = cacheDir
+                )
+            }
+            saveCachedObjects(manifestPath, generated)
+            generated
         }
 
         val projectPreview = rawBySuffix[commonSuffixes.first()] ?: rgbMasks.first()
+        val objectsForUi = resolvedObjects.map { cached ->
+            DatasetObject(
+                id = cached.id,
+                name = cached.name,
+                category = cached.category,
+                previewUrl = fileResourceUrl(cacheDir.resolve(cached.previewFileName)),
+                properties = cached.properties.toMutableMap()
+            )
+        }
 
         return DatasetProject(
             id = "dataset-$datasetDirectoryName",
@@ -284,17 +313,18 @@ class MainView : VerticalLayout() {
             type = "Импорт из /siams/images",
             source = datasetPath.toString(),
             previewUrl = fileResourceUrl(projectPreview),
-            objects = datasetObjects
+            objects = objectsForUi
         )
     }
 
-    private fun extractObjectsFromPair(
+    private fun extractObjectsFromPairToCache(
         datasetDirectoryName: String,
         suffix: String,
         sourceImagePath: Path,
         maskImagePath: Path,
-        legend: Map<Int, String>
-    ): List<DatasetObject> {
+        legend: Map<Int, String>,
+        cacheDir: Path
+    ): List<CachedDatasetObject> {
         val source = ImageIO.read(sourceImagePath.toFile())
             ?: throw IllegalArgumentException("Не удалось прочитать изображение ${sourceImagePath.fileName}")
         val mask = ImageIO.read(maskImagePath.toFile())
@@ -304,7 +334,7 @@ class MainView : VerticalLayout() {
             "Размеры source и mask не совпадают для индекса $suffix"
         }
 
-        val objects = mutableListOf<DatasetObject>()
+        val objects = mutableListOf<CachedDatasetObject>()
         val width = mask.width
         val height = mask.height
         val visited = BooleanArray(width * height)
@@ -323,15 +353,16 @@ class MainView : VerticalLayout() {
 
                 grainCounter += 1
                 val grainClass = legend[color] ?: "Unknown(0x${color.toString(16).padStart(6, '0').uppercase()})"
-                val previewBytes = buildMaskedCrop(source, component)
-                val previewUrl = byteArrayResourceUrl("grain-$datasetDirectoryName-$suffix-$grainCounter.png", previewBytes)
+                val previewFileName = "grain-$suffix-$grainCounter.png"
+                val previewPath = cacheDir.resolve(previewFileName)
+                Files.write(previewPath, buildMaskedCrop(source, component))
 
-                objects += DatasetObject(
+                objects += CachedDatasetObject(
                     id = "$datasetDirectoryName-$suffix-$grainCounter",
                     name = "Зерно $suffix #$grainCounter",
                     category = "OreGrain",
-                    previewUrl = previewUrl,
-                    properties = mutableMapOf(
+                    previewFileName = previewFileName,
+                    properties = mapOf(
                         "dataset" to datasetDirectoryName,
                         "source_image_file" to sourceImagePath.fileName.toString(),
                         "mask_rgb_file" to maskImagePath.fileName.toString(),
@@ -408,12 +439,6 @@ class MainView : VerticalLayout() {
         }
     }
 
-    private fun byteArrayResourceUrl(fileName: String, bytes: ByteArray): String =
-        StreamResource(fileName) { bytes.inputStream() }.let { resource ->
-            val currentUi = ui.orElseThrow { IllegalStateException("UI context is not available for resource registration.") }
-            currentUi.session.resourceRegistry.registerResource(resource).resourceUri.toString()
-        }
-
     private fun BufferedImage.rgbNoAlpha(x: Int, y: Int): Int = getRGB(x, y) and 0xFFFFFF
 
     private fun parseLegend(legendFile: Path): Map<Int, String> {
@@ -433,6 +458,66 @@ class MainView : VerticalLayout() {
             val currentUi = ui.orElseThrow { IllegalStateException("UI context is not available for resource registration.") }
             currentUi.session.resourceRegistry.registerResource(resource).resourceUri.toString()
         }
+
+    private fun buildDatasetSignature(
+        datasetPath: Path,
+        sourceBySuffix: Map<String, Path>,
+        maskBySuffix: Map<String, Path>,
+        commonSuffixes: List<String>
+    ): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        commonSuffixes.forEach { suffix ->
+            updateDigestWithFile(digest, sourceBySuffix.getValue(suffix))
+            updateDigestWithFile(digest, maskBySuffix.getValue(suffix))
+        }
+        val legend = datasetPath.resolve("legend.json")
+        if (Files.exists(legend)) {
+            updateDigestWithFile(digest, legend)
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }.take(16)
+    }
+
+    private fun updateDigestWithFile(digest: MessageDigest, file: Path) {
+        val attrs = Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes::class.java)
+        digest.update(file.fileName.toString().toByteArray())
+        digest.update(attrs.size().toString().toByteArray())
+        digest.update(attrs.lastModifiedTime().toMillis().toString().toByteArray())
+    }
+
+    private fun saveCachedObjects(manifestPath: Path, objects: List<CachedDatasetObject>) {
+        val mapper = ObjectMapper()
+        val root = mapper.createArrayNode()
+        objects.forEach { item ->
+            val node = mapper.createObjectNode()
+            node.put("id", item.id)
+            node.put("name", item.name)
+            node.put("category", item.category)
+            node.put("previewFileName", item.previewFileName)
+            val propertiesNode = mapper.createObjectNode()
+            item.properties.forEach { (k, v) -> propertiesNode.put(k, v) }
+            node.set<com.fasterxml.jackson.databind.JsonNode>("properties", propertiesNode)
+            root.add(node)
+        }
+        mapper.writerWithDefaultPrettyPrinter().writeValue(manifestPath.toFile(), root)
+    }
+
+    private fun loadCachedObjects(manifestPath: Path): List<CachedDatasetObject> {
+        val mapper = ObjectMapper()
+        val root = mapper.readTree(manifestPath.toFile())
+        if (!root.isArray) return emptyList()
+        return root.mapNotNull { node ->
+            val id = node.path("id").asText(null) ?: return@mapNotNull null
+            val name = node.path("name").asText(null) ?: return@mapNotNull null
+            val category = node.path("category").asText(null) ?: return@mapNotNull null
+            val preview = node.path("previewFileName").asText(null) ?: return@mapNotNull null
+            val propertiesNode = node.path("properties")
+            val props = mutableMapOf<String, String>()
+            if (propertiesNode.isObject) {
+                propertiesNode.fields().forEach { (k, v) -> props[k] = v.asText() }
+            }
+            CachedDatasetObject(id, name, category, preview, props)
+        }
+    }
 
     private fun projectCard(project: DatasetProject, selected: Boolean, onClick: () -> Unit): Component {
         val image = Image(project.previewUrl, project.name).apply {
@@ -708,6 +793,14 @@ private data class ConnectedComponent(
     val minY: Int,
     val maxX: Int,
     val maxY: Int
+)
+
+private data class CachedDatasetObject(
+    val id: String,
+    val name: String,
+    val category: String,
+    val previewFileName: String,
+    val properties: Map<String, String>
 )
 
 private fun demoProjects(): List<DatasetProject> = listOf(
