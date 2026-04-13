@@ -29,6 +29,7 @@ import java.time.LocalDate
 import java.util.ArrayDeque
 import java.security.MessageDigest
 import java.util.stream.Collectors
+import java.util.concurrent.CompletableFuture
 import javax.imageio.ImageIO
 
 @Route("")
@@ -44,6 +45,8 @@ class MainView : VerticalLayout() {
     private val objectGallery = com.vaadin.flow.component.html.Div()
     private val selectedObjectTitle = H4("Выберите объект")
     private val propertyEditor = com.vaadin.flow.component.html.Div()
+    private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
+    private var selectedObjectCard: com.vaadin.flow.component.html.Div? = null
 
     private var selectedProject: DatasetProject? = null
     private var selectedObject: DatasetObject? = null
@@ -123,6 +126,7 @@ class MainView : VerticalLayout() {
     private fun selectProject(project: DatasetProject) {
         selectedProject = project
         selectedObject = null
+        selectedObjectCard = null
         renderProjects()
         objectHeader.text = "Объекты (${project.objects.size})"
         renderObjects(project.objects)
@@ -131,12 +135,13 @@ class MainView : VerticalLayout() {
 
     private fun selectObject(obj: DatasetObject) {
         selectedObject = obj
-        renderObjects(selectedProject?.objects.orEmpty())
+        updateObjectSelection(obj)
         updateProperties(obj)
     }
 
     private fun renderObjects(objects: List<DatasetObject>) {
         objectGallery.removeAll()
+        objectCardsById.clear()
 
         if (objects.isEmpty()) {
             objectGallery.add(Paragraph("Нет объектов в выбранном проекте."))
@@ -144,7 +149,21 @@ class MainView : VerticalLayout() {
         }
 
         objects.forEach { obj ->
-            objectGallery.add(objectCard(obj, obj == selectedObject) { selectObject(obj) })
+            val card = objectCard(obj, obj == selectedObject) { selectObject(obj) }
+            objectCardsById[obj.id] = card
+            if (obj == selectedObject) {
+                selectedObjectCard = card
+            }
+            objectGallery.add(card)
+        }
+    }
+
+    private fun updateObjectSelection(obj: DatasetObject) {
+        selectedObjectCard?.let { styleObjectSelection(false, it.style) }
+        val newCard = objectCardsById[obj.id]
+        if (newCard != null) {
+            styleObjectSelection(true, newCard.style)
+            selectedObjectCard = newCard
         }
     }
 
@@ -192,29 +211,43 @@ class MainView : VerticalLayout() {
             })
         }
 
-        val importButton = Button("Импортировать") {
+        val importButton = Button("Импортировать")
+        importButton.addClickListener {
             val selectedFolder = datasetSelector.value
             if (selectedFolder.isNullOrBlank()) {
                 Notification.show("Сначала выберите каталог датасета.", 2500, Notification.Position.MIDDLE)
                     .addThemeVariants(NotificationVariant.LUMO_CONTRAST)
-                return@Button
+                return@addClickListener
             }
 
-            val importedProject = runCatching { importProjectFromDataset(selectedFolder) }.getOrElse { error ->
-                Notification.show(
-                    "Не удалось импортировать датасет: ${error.message ?: "неизвестная ошибка"}",
-                    4500,
-                    Notification.Position.MIDDLE
-                ).addThemeVariants(NotificationVariant.LUMO_ERROR)
-                return@Button
-            }
+            val currentUi = ui.orElseThrow { IllegalStateException("UI context is not available for import.") }
+            importButton.isEnabled = false
+            datasetSelector.isEnabled = false
 
-            projects.removeAll { it.id == importedProject.id }
-            projects.add(0, importedProject)
-            renderProjects()
-            selectProject(importedProject)
-            dialog.close()
-            Notification.show("Импортировано: ${importedProject.name}", 2500, Notification.Position.BOTTOM_START)
+            CompletableFuture.supplyAsync {
+                importProjectFromDataset(selectedFolder)
+            }.whenComplete { importedProject, throwable ->
+                currentUi.access {
+                    importButton.isEnabled = true
+                    datasetSelector.isEnabled = true
+
+                    if (throwable != null) {
+                        Notification.show(
+                            "Не удалось импортировать датасет: ${throwable.cause?.message ?: throwable.message ?: "неизвестная ошибка"}",
+                            4500,
+                            Notification.Position.MIDDLE
+                        ).addThemeVariants(NotificationVariant.LUMO_ERROR)
+                        return@access
+                    }
+
+                    projects.removeAll { it.id == importedProject.id }
+                    projects.add(0, importedProject)
+                    renderProjects()
+                    selectProject(importedProject)
+                    dialog.close()
+                    Notification.show("Импортировано: ${importedProject.name}", 2500, Notification.Position.BOTTOM_START)
+                }
+            }
         }
 
         dialog.footer.add(
@@ -456,7 +489,8 @@ class MainView : VerticalLayout() {
     private fun fileResourceUrl(file: Path): String =
         StreamResource(file.fileName.toString()) { Files.newInputStream(file) }.let { resource ->
             val currentUi = ui.orElseThrow { IllegalStateException("UI context is not available for resource registration.") }
-            currentUi.session.resourceRegistry.registerResource(resource).resourceUri.toString()
+            val uri = currentUi.session.resourceRegistry.registerResource(resource).resourceUri.toString()
+            if (uri.startsWith("/")) uri else "/$uri"
         }
 
     private fun buildDatasetSignature(
@@ -552,7 +586,7 @@ class MainView : VerticalLayout() {
         }
     }
 
-    private fun objectCard(obj: DatasetObject, selected: Boolean, onClick: () -> Unit): Component {
+    private fun objectCard(obj: DatasetObject, selected: Boolean, onClick: () -> Unit): com.vaadin.flow.component.html.Div {
         val image = Image(obj.previewUrl, obj.name).apply {
             style["display"] = "block"
             style["width"] = "240px"
