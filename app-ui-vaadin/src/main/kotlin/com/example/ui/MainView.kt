@@ -395,8 +395,22 @@ class MainView : VerticalLayout() {
     }
 
     private fun refreshFilterOptions(objects: List<DatasetObject>) {
-        grainClassFilter.setItems(objects.mapNotNull { it.properties["grain_class"] }.filter { it.isNotBlank() }.distinct().sorted())
-        statusFilter.setItems(objects.mapNotNull { it.properties["meta_status"] }.filter { it.isNotBlank() }.distinct().sorted())
+        val currentGrainClassFilter = grainClassFilter.value?.trim().orEmpty()
+        val currentStatusFilter = statusFilter.value?.trim().orEmpty()
+
+        val grainClassItems = (objects.mapNotNull { it.properties["grain_class"] } + currentGrainClassFilter)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+        val statusItems = (objects.mapNotNull { it.properties["meta_status"] } + currentStatusFilter)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+
+        grainClassFilter.setItems(grainClassItems)
+        statusFilter.setItems(statusItems)
     }
 
     private fun refreshObjectGallery(resetPaging: Boolean = false) {
