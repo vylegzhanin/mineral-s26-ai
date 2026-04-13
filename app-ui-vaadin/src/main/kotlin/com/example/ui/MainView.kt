@@ -8,6 +8,7 @@ import com.vaadin.flow.component.datepicker.DatePicker
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.formlayout.FormLayout
 import com.vaadin.flow.component.html.*
+import com.vaadin.flow.component.progressbar.ProgressBar
 import com.vaadin.flow.component.notification.Notification
 import com.vaadin.flow.component.notification.NotificationVariant
 import com.vaadin.flow.component.orderedlayout.FlexComponent
@@ -223,13 +224,39 @@ class MainView : VerticalLayout() {
             val currentUi = ui.orElseThrow { IllegalStateException("UI context is not available for import.") }
             importButton.isEnabled = false
             datasetSelector.isEnabled = false
+            val progressText = Span("Подготовка импорта…")
+            val progressBar = ProgressBar().apply {
+                isIndeterminate = true
+                setWidthFull()
+            }
+            val progressDialog = Dialog(
+                VerticalLayout(progressText, progressBar).apply {
+                    isPadding = false
+                    isSpacing = true
+                    setWidth("420px")
+                }
+            ).apply {
+                headerTitle = "Импорт проекта"
+                isCloseOnEsc = false
+                isCloseOnOutsideClick = false
+            }
+            progressDialog.open()
 
             CompletableFuture.supplyAsync {
-                importProjectFromDataset(selectedFolder)
+                importProjectFromDataset(selectedFolder) { progress ->
+                    currentUi.access {
+                        progressText.text = progress.message
+                        progressBar.isIndeterminate = progress.indeterminate
+                        if (!progress.indeterminate && progress.total > 0) {
+                            progressBar.value = progress.current.toDouble() / progress.total.toDouble()
+                        }
+                    }
+                }
             }.whenComplete { importedProject, throwable ->
                 currentUi.access {
                     importButton.isEnabled = true
                     datasetSelector.isEnabled = true
+                    progressDialog.close()
 
                     if (throwable != null) {
                         Notification.show(
@@ -243,9 +270,12 @@ class MainView : VerticalLayout() {
                     projects.removeAll { it.id == importedProject.id }
                     projects.add(0, importedProject)
                     renderProjects()
-                    selectProject(importedProject)
                     dialog.close()
-                    Notification.show("Импортировано: ${importedProject.name}", 2500, Notification.Position.BOTTOM_START)
+                    Notification.show(
+                        "Импортировано: ${importedProject.name}. Откройте проект для просмотра объектов.",
+                        3000,
+                        Notification.Position.BOTTOM_START
+                    )
                 }
             }
         }
@@ -271,10 +301,15 @@ class MainView : VerticalLayout() {
         }
     }
 
-    private fun importProjectFromDataset(datasetDirectoryName: String): DatasetProject {
+    private fun importProjectFromDataset(
+        datasetDirectoryName: String,
+        onProgress: (ImportProgress) -> Unit = {}
+    ): DatasetProject {
+        onProgress(ImportProgress("Проверка каталога…", 0, 0, true))
         val datasetPath = datasetsRoot.resolve(datasetDirectoryName)
         require(Files.isDirectory(datasetPath)) { "Каталог $datasetPath не найден." }
 
+        onProgress(ImportProgress("Чтение списка файлов…", 0, 0, true))
         val rawImages = Files.list(datasetPath).use { stream ->
             stream.filter { it.fileName.toString().startsWith("img-") && it.fileName.toString().endsWith(".png") }
                 .sorted()
@@ -313,9 +348,11 @@ class MainView : VerticalLayout() {
 
         val cachedObjects = if (Files.exists(manifestPath)) loadCachedObjects(manifestPath) else emptyList()
         val resolvedObjects = if (cachedObjects.isNotEmpty() && cachedObjects.all { Files.exists(cacheDir.resolve(it.previewFileName)) }) {
+            onProgress(ImportProgress("Загрузка из кэша…", 1, 1, false))
             cachedObjects
         } else {
-            val generated = commonSuffixes.flatMap { suffix ->
+            val generated = commonSuffixes.flatMapIndexed { index, suffix ->
+                onProgress(ImportProgress("Обработка масок: ${index + 1}/${commonSuffixes.size}", index, commonSuffixes.size, false))
                 extractObjectsFromPairToCache(
                     datasetDirectoryName = datasetDirectoryName,
                     suffix = suffix,
@@ -325,10 +362,12 @@ class MainView : VerticalLayout() {
                     cacheDir = cacheDir
                 )
             }
+            onProgress(ImportProgress("Сохранение кэша…", commonSuffixes.size, commonSuffixes.size, false))
             saveCachedObjects(manifestPath, generated)
             generated
         }
 
+        onProgress(ImportProgress("Подготовка проекта…", 1, 1, false))
         val projectPreview = rawBySuffix[commonSuffixes.first()] ?: rgbMasks.first()
         val objectsForUi = resolvedObjects.map { cached ->
             DatasetObject(
@@ -835,6 +874,13 @@ private data class CachedDatasetObject(
     val category: String,
     val previewFileName: String,
     val properties: Map<String, String>
+)
+
+private data class ImportProgress(
+    val message: String,
+    val current: Int,
+    val total: Int,
+    val indeterminate: Boolean
 )
 
 private fun demoProjects(): List<DatasetProject> = listOf(
