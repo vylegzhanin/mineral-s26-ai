@@ -21,10 +21,14 @@ import com.vaadin.flow.dom.Style
 import com.vaadin.flow.server.StreamResource
 import com.vaadin.flow.router.Route
 import com.fasterxml.jackson.databind.ObjectMapper
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
+import java.util.ArrayDeque
 import java.util.stream.Collectors
+import javax.imageio.ImageIO
 
 @Route("")
 class MainView : VerticalLayout() {
@@ -251,31 +255,28 @@ class MainView : VerticalLayout() {
         require(rgbMasks.isNotEmpty()) { "В каталоге нет файлов msk_rgb-*.png." }
 
         val legendFile = datasetPath.resolve("legend.json")
-        val classes = if (Files.exists(legendFile)) {
+        val legend = if (Files.exists(legendFile)) {
             parseLegend(legendFile)
         } else {
-            emptyList()
+            emptyMap()
         }
 
         val rawBySuffix = rawImages.associateBy { it.fileName.toString().removePrefix("img-").removeSuffix(".png") }
-        val datasetObjects = rgbMasks.mapIndexed { index, maskPath ->
-            val suffix = maskPath.fileName.toString().removePrefix("msk_rgb-").removeSuffix(".png")
-            val sourceImage = rawBySuffix[suffix]
-            DatasetObject(
-                id = "${datasetDirectoryName}-$suffix",
-                name = "Объект #${index + 1} ($suffix)",
-                category = "MaskObject",
-                previewUrl = fileResourceUrl(maskPath),
-                properties = mutableMapOf(
-                    "dataset" to datasetDirectoryName,
-                    "mask_rgb_file" to maskPath.fileName.toString(),
-                    "source_image_file" to (sourceImage?.fileName?.toString() ?: ""),
-                    "classes" to if (classes.isEmpty()) "не указаны" else classes.joinToString(", ")
-                )
+        val maskBySuffix = rgbMasks.associateBy { it.fileName.toString().removePrefix("msk_rgb-").removeSuffix(".png") }
+        val commonSuffixes = rawBySuffix.keys.intersect(maskBySuffix.keys).sorted()
+        require(commonSuffixes.isNotEmpty()) { "Не найдено пар img-*.png и msk_rgb-*.png с одинаковым индексом." }
+
+        val datasetObjects = commonSuffixes.flatMap { suffix ->
+            extractObjectsFromPair(
+                datasetDirectoryName = datasetDirectoryName,
+                suffix = suffix,
+                sourceImagePath = rawBySuffix.getValue(suffix),
+                maskImagePath = maskBySuffix.getValue(suffix),
+                legend = legend
             )
         }
 
-        val projectPreview = rawImages.firstOrNull() ?: rgbMasks.first()
+        val projectPreview = rawBySuffix[commonSuffixes.first()] ?: rgbMasks.first()
 
         return DatasetProject(
             id = "dataset-$datasetDirectoryName",
@@ -287,11 +288,144 @@ class MainView : VerticalLayout() {
         )
     }
 
-    private fun parseLegend(legendFile: Path): List<String> {
+    private fun extractObjectsFromPair(
+        datasetDirectoryName: String,
+        suffix: String,
+        sourceImagePath: Path,
+        maskImagePath: Path,
+        legend: Map<Int, String>
+    ): List<DatasetObject> {
+        val source = ImageIO.read(sourceImagePath.toFile())
+            ?: throw IllegalArgumentException("Не удалось прочитать изображение ${sourceImagePath.fileName}")
+        val mask = ImageIO.read(maskImagePath.toFile())
+            ?: throw IllegalArgumentException("Не удалось прочитать маску ${maskImagePath.fileName}")
+
+        require(source.width == mask.width && source.height == mask.height) {
+            "Размеры source и mask не совпадают для индекса $suffix"
+        }
+
+        val objects = mutableListOf<DatasetObject>()
+        val width = mask.width
+        val height = mask.height
+        val visited = BooleanArray(width * height)
+        var grainCounter = 0
+
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val color = mask.rgbNoAlpha(x, y)
+                if (color == 0x000000) continue
+
+                val linearIndex = y * width + x
+                if (visited[linearIndex]) continue
+
+                val component = collectConnectedComponent(mask, x, y, color, visited)
+                if (component.points.isEmpty()) continue
+
+                grainCounter += 1
+                val grainClass = legend[color] ?: "Unknown(0x${color.toString(16).padStart(6, '0').uppercase()})"
+                val previewBytes = buildMaskedCrop(source, component)
+                val previewUrl = byteArrayResourceUrl("grain-$datasetDirectoryName-$suffix-$grainCounter.png", previewBytes)
+
+                objects += DatasetObject(
+                    id = "$datasetDirectoryName-$suffix-$grainCounter",
+                    name = "Зерно $suffix #$grainCounter",
+                    category = "OreGrain",
+                    previewUrl = previewUrl,
+                    properties = mutableMapOf(
+                        "dataset" to datasetDirectoryName,
+                        "source_image_file" to sourceImagePath.fileName.toString(),
+                        "mask_rgb_file" to maskImagePath.fileName.toString(),
+                        "grain_class" to grainClass,
+                        "mask_color_rgb" to "0x${color.toString(16).padStart(6, '0').uppercase()}"
+                    )
+                )
+            }
+        }
+
+        return objects
+    }
+
+    private fun collectConnectedComponent(
+        mask: BufferedImage,
+        startX: Int,
+        startY: Int,
+        componentColor: Int,
+        visited: BooleanArray
+    ): ConnectedComponent {
+        val width = mask.width
+        val height = mask.height
+        val queue = ArrayDeque<Point>()
+        val points = mutableListOf<Point>()
+
+        var minX = startX
+        var maxX = startX
+        var minY = startY
+        var maxY = startY
+
+        fun visit(x: Int, y: Int) {
+            if (x < 0 || y < 0 || x >= width || y >= height) return
+            val idx = y * width + x
+            if (visited[idx]) return
+            if (mask.rgbNoAlpha(x, y) != componentColor) return
+            visited[idx] = true
+            queue.addLast(Point(x, y))
+        }
+
+        visit(startX, startY)
+        while (queue.isNotEmpty()) {
+            val p = queue.removeFirst()
+            points += p
+
+            if (p.x < minX) minX = p.x
+            if (p.x > maxX) maxX = p.x
+            if (p.y < minY) minY = p.y
+            if (p.y > maxY) maxY = p.y
+
+            for (dy in -1..1) {
+                for (dx in -1..1) {
+                    if (dx == 0 && dy == 0) continue
+                    visit(p.x + dx, p.y + dy)
+                }
+            }
+        }
+
+        return ConnectedComponent(points, minX, minY, maxX, maxY)
+    }
+
+    private fun buildMaskedCrop(source: BufferedImage, component: ConnectedComponent): ByteArray {
+        val cropWidth = component.maxX - component.minX + 1
+        val cropHeight = component.maxY - component.minY + 1
+        val crop = BufferedImage(cropWidth, cropHeight, BufferedImage.TYPE_INT_ARGB)
+
+        component.points.forEach { point ->
+            val sourceArgb = source.getRGB(point.x, point.y)
+            crop.setRGB(point.x - component.minX, point.y - component.minY, sourceArgb or (0xFF shl 24))
+        }
+
+        return ByteArrayOutputStream().use { output ->
+            ImageIO.write(crop, "png", output)
+            output.toByteArray()
+        }
+    }
+
+    private fun byteArrayResourceUrl(fileName: String, bytes: ByteArray): String =
+        StreamResource(fileName) { bytes.inputStream() }.let { resource ->
+            val currentUi = ui.orElseThrow { IllegalStateException("UI context is not available for resource registration.") }
+            currentUi.session.resourceRegistry.registerResource(resource).resourceUri.toString()
+        }
+
+    private fun BufferedImage.rgbNoAlpha(x: Int, y: Int): Int = getRGB(x, y) and 0xFFFFFF
+
+    private fun parseLegend(legendFile: Path): Map<Int, String> {
         val rootNode = ObjectMapper().readTree(legendFile.toFile())
-        if (!rootNode.isArray) return emptyList()
+        if (!rootNode.isArray) return emptyMap()
         return rootNode
-            .mapNotNull { node -> node.path("name").takeIf { !it.isMissingNode && !it.isNull }?.asText() }
+            .mapNotNull { node ->
+                val color = node.path("color").takeIf { it.canConvertToInt() }?.asInt() ?: return@mapNotNull null
+                val name = node.path("name").takeIf { !it.isMissingNode && !it.isNull }?.asText() ?: return@mapNotNull null
+                color to name
+            }
+            .toMap()
     }
 
     private fun fileResourceUrl(file: Path): String =
@@ -561,6 +695,19 @@ private data class DatasetObject(
     val category: String,
     val previewUrl: String,
     val properties: MutableMap<String, String>
+)
+
+private data class Point(
+    val x: Int,
+    val y: Int
+)
+
+private data class ConnectedComponent(
+    val points: List<Point>,
+    val minX: Int,
+    val minY: Int,
+    val maxX: Int,
+    val maxY: Int
 )
 
 private fun demoProjects(): List<DatasetProject> = listOf(
