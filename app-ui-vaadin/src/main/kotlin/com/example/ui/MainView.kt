@@ -47,6 +47,7 @@ import javax.imageio.ImageIO
 class MainView : VerticalLayout() {
     companion object {
         private const val OBJECT_PAGE_SIZE = 200
+        private const val MULTIPHASE_CLASS_NAME = "Многофазный"
         private val log = LoggerFactory.getLogger(MainView::class.java)
     }
 
@@ -108,17 +109,10 @@ class MainView : VerticalLayout() {
         isClearButtonVisible = true
         setWidth("110px")
     }
-    private val maskOverlayModeSelector = ComboBox<MaskOverlayMode>().apply {
-        label = "Маски"
-        setItems(MaskOverlayMode.entries)
-        value = MaskOverlayMode.MULTIPHASE_ONLY
-        isClearButtonVisible = false
-        width = "230px"
-        setItemLabelGenerator { it.label }
+    private val showMasksCheckbox = Checkbox("Маски").apply {
+        value = false
         addValueChangeListener {
-            if (it.value != null) {
-                refreshObjectGallery(resetPaging = false)
-            }
+            refreshObjectGallery(resetPaging = false)
         }
     }
     private val selectedObjectTitle = H4("Выберите объект")
@@ -278,7 +272,7 @@ class MainView : VerticalLayout() {
             HorizontalLayout(
                 filterAddMenu(),
                 filterControls,
-                maskOverlayModeSelector,
+                showMasksCheckbox,
                 Button("Сброс") {
                     clearFilters()
                     refreshObjectGallery(resetPaging = true)
@@ -414,6 +408,9 @@ class MainView : VerticalLayout() {
         grainClassFilter.addValueChangeListener {
             val selectedGrainClass = it.value?.trim().orEmpty()
             applyColorIconToCombo(grainClassFilter, grainClassColorMapForCurrentDataset()[selectedGrainClass])
+            if (selectedGrainClass == MULTIPHASE_CLASS_NAME) {
+                showMasksCheckbox.value = true
+            }
             refreshObjectGallery(resetPaging = true)
         }
         statusFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
@@ -1190,14 +1187,9 @@ class MainView : VerticalLayout() {
     }
 
     private fun shouldShowMaskOverlay(obj: DatasetObject): Boolean {
-        val mode = maskOverlayModeSelector.value ?: MaskOverlayMode.MULTIPHASE_ONLY
+        if (!showMasksCheckbox.value) return false
         val hasMaskUrl = !obj.properties["mask_crop_url"].isNullOrBlank()
-        if (!hasMaskUrl) return false
-        return when (mode) {
-            MaskOverlayMode.OFF -> false
-            MaskOverlayMode.MULTIPHASE_ONLY -> obj.properties["object_phase_type"] == "multi_phase"
-            MaskOverlayMode.ALL -> true
-        }
+        return hasMaskUrl
     }
 
     private fun styleSelection(selected: Boolean, style: Style) {
@@ -1605,12 +1597,6 @@ private enum class ObjectFilter {
     CONFIDENCE,
     ANALYSIS_DATE,
     REVIEWED
-}
-
-private enum class MaskOverlayMode(val label: String) {
-    OFF("Скрыть"),
-    MULTIPHASE_ONLY("Только многофазные"),
-    ALL("Показывать все")
 }
 
 private fun demoProjects(): List<DatasetProject> = emptyList()
