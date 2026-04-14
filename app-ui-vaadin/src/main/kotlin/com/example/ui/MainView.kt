@@ -32,6 +32,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
 import java.util.ArrayDeque
+import java.util.Locale
 import java.security.MessageDigest
 import java.util.stream.Collectors
 import java.util.concurrent.CancellationException
@@ -813,18 +814,22 @@ class MainView : VerticalLayout() {
                 val linearIndex = y * width + x
                 if (visited[linearIndex]) continue
 
-                val component = collectConnectedComponent(mask, x, y, color, visited)
+                val component = collectConnectedComponent(mask, x, y, visited)
                 if (component.points.isEmpty()) continue
 
                 grainCounter += 1
-                val grainClass = legend[color] ?: "Unknown(0x${color.toString(16).padStart(6, '0').uppercase()})"
+                val phaseStatistics = collectPhaseStatistics(mask, component.points)
+                val objectClassInfo = resolveObjectClassInfo(phaseStatistics, legend)
                 val previewFileName = "grain-$suffix-$grainCounter.png"
                 val previewPath = cacheDir.resolve(previewFileName)
                 Files.write(previewPath, buildMaskedCrop(source, component))
+                val maskPreviewFileName = "grain-mask-$suffix-$grainCounter.png"
+                val maskPreviewPath = cacheDir.resolve(maskPreviewFileName)
+                Files.write(maskPreviewPath, buildMaskedCrop(mask, component))
 
                 objects += CachedDatasetObject(
                     id = "$datasetDirectoryName-$suffix-$grainCounter",
-                    name = grainClass,
+                    name = objectClassInfo.grainClass,
                     category = "OreGrain",
                     previewFileName = previewFileName,
                     properties = mapOf(
@@ -832,8 +837,12 @@ class MainView : VerticalLayout() {
                         "grain_id" to "$suffix-$grainCounter",
                         "source_image_file" to sourceImagePath.fileName.toString(),
                         "mask_rgb_file" to maskImagePath.fileName.toString(),
-                        "grain_class" to grainClass,
-                        "mask_color_rgb" to "0x${color.toString(16).padStart(6, '0').uppercase()}",
+                        "grain_class" to objectClassInfo.grainClass,
+                        "mask_color_rgb" to objectClassInfo.classColorHex,
+                        "object_phase_type" to objectClassInfo.phaseType,
+                        "phase_count" to phaseStatistics.size.toString(),
+                        "phase_area_shares" to formatPhaseAreaShares(phaseStatistics, legend),
+                        "mask_crop_file" to maskPreviewFileName,
                         "crop_width" to (component.maxX - component.minX + 1).toString(),
                         "crop_height" to (component.maxY - component.minY + 1).toString()
                     )
@@ -848,7 +857,6 @@ class MainView : VerticalLayout() {
         mask: BufferedImage,
         startX: Int,
         startY: Int,
-        componentColor: Int,
         visited: BooleanArray
     ): ConnectedComponent {
         val width = mask.width
@@ -865,7 +873,7 @@ class MainView : VerticalLayout() {
             if (x < 0 || y < 0 || x >= width || y >= height) return
             val idx = y * width + x
             if (visited[idx]) return
-            if (mask.rgbNoAlpha(x, y) != componentColor) return
+            if (mask.rgbNoAlpha(x, y) == 0x000000) return
             visited[idx] = true
             queue.addLast(Point(x, y))
         }
@@ -890,6 +898,55 @@ class MainView : VerticalLayout() {
 
         return ConnectedComponent(points, minX, minY, maxX, maxY)
     }
+
+    private fun collectPhaseStatistics(
+        mask: BufferedImage,
+        points: List<Point>
+    ): Map<Int, Int> {
+        val stats = linkedMapOf<Int, Int>()
+        points.forEach { point ->
+            val color = mask.rgbNoAlpha(point.x, point.y)
+            if (color == 0x000000) return@forEach
+            stats[color] = (stats[color] ?: 0) + 1
+        }
+        return stats
+    }
+
+    private fun resolveObjectClassInfo(
+        phaseStatistics: Map<Int, Int>,
+        legend: Map<Int, String>
+    ): ObjectClassInfo {
+        if (phaseStatistics.size == 1) {
+            val onlyColor = phaseStatistics.keys.first()
+            val grainClass = legend[onlyColor] ?: "Unknown(0x${onlyColor.toString(16).padStart(6, '0').uppercase()})"
+            return ObjectClassInfo(
+                grainClass = grainClass,
+                classColorHex = toHexColor(onlyColor),
+                phaseType = "single_phase"
+            )
+        }
+
+        return ObjectClassInfo(
+            grainClass = "Многофазный",
+            classColorHex = "0xAAAAAA",
+            phaseType = "multi_phase"
+        )
+    }
+
+    private fun formatPhaseAreaShares(
+        phaseStatistics: Map<Int, Int>,
+        legend: Map<Int, String>
+    ): String {
+        val total = phaseStatistics.values.sum().takeIf { it > 0 } ?: return "{}"
+        val sorted = phaseStatistics.entries.sortedByDescending { it.value }
+        return sorted.joinToString(prefix = "{", postfix = "}") { (color, area) ->
+            val phaseName = legend[color] ?: "Unknown(${toHexColor(color)})"
+            val share = area.toDouble() / total.toDouble()
+            "\"$phaseName\":${"%.6f".format(Locale.US, share)}"
+        }
+    }
+
+    private fun toHexColor(color: Int): String = "0x${color.toString(16).padStart(6, '0').uppercase()}"
 
     private fun buildMaskedCrop(source: BufferedImage, component: ConnectedComponent): ByteArray {
         val cropWidth = component.maxX - component.minX + 1
@@ -1465,6 +1522,12 @@ private data class CachedDatasetObject(
     val category: String,
     val previewFileName: String,
     val properties: Map<String, String>
+)
+
+private data class ObjectClassInfo(
+    val grainClass: String,
+    val classColorHex: String,
+    val phaseType: String
 )
 
 private data class ImportProgress(
