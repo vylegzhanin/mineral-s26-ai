@@ -1095,7 +1095,7 @@ class MainView : VerticalLayout() {
     private fun styleObjectSelection(selected: Boolean, style: Style) {
         if (selected) {
             style["outline"] = "2px solid rgba(255,255,255,0.92)"
-            style["box-shadow"] = "0 0 0 4px var(--lumo-primary-color)"
+            style["box-shadow"] = "0 0 0 4px rgba(0,0,0,0.55), 0 0 0 8px var(--lumo-primary-color)"
         } else {
             style["outline"] = "2px solid var(--lumo-contrast-20pct)"
             style["box-shadow"] = "none"
