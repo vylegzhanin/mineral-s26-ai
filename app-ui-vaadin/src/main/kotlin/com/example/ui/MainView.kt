@@ -1278,16 +1278,21 @@ class MainView : VerticalLayout() {
         }
 
     private fun grainClassEditor(value: String, obj: DatasetObject): ComboBox<String> {
+        val isMultiphaseObject = obj.properties["object_phase_type"] == "multi_phase" || value.trim() == MULTIPHASE_CLASS_NAME
         val colorByGrainClass = grainClassColorMapForCurrentDataset()
         val editor = ComboBox<String>().apply {
-            setItems(grainClassOptionsForCurrentDataset(value))
-            isAllowCustomValue = true
+            setItems(
+                if (isMultiphaseObject) listOf(MULTIPHASE_CLASS_NAME)
+                else grainClassOptionsForCurrentDataset(value)
+            )
+            isAllowCustomValue = !isMultiphaseObject
             this.value = value
             setWidthFull()
             setItemLabelGenerator { it }
             setRenderer(ComponentRenderer { grainClass ->
                 grainClassOptionView(grainClass, colorByGrainClass[grainClass])
             })
+            isReadOnly = isMultiphaseObject
         }
 
         fun applyLinkedColor(selectedGrainClass: String) {
@@ -1318,10 +1323,12 @@ class MainView : VerticalLayout() {
         }
 
         applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
-        editor.addValueChangeListener { applyLinkedColor(it.value ?: "") }
-        editor.addCustomValueSetListener {
-            editor.value = it.detail
-            applyLinkedColor(it.detail)
+        if (!isMultiphaseObject) {
+            editor.addValueChangeListener { applyLinkedColor(it.value ?: "") }
+            editor.addCustomValueSetListener {
+                editor.value = it.detail
+                applyLinkedColor(it.detail)
+            }
         }
         return editor
     }
@@ -1330,13 +1337,14 @@ class MainView : VerticalLayout() {
         val datasetOptions = selectedProject
             ?.objects
             ?.mapNotNull { it.properties["grain_class"]?.trim() }
-            ?.filter { it.isNotBlank() }
+            ?.filter { it.isNotBlank() && it != MULTIPHASE_CLASS_NAME }
             ?.distinct()
             ?.sorted()
             .orEmpty()
 
         return (datasetOptions + currentValue.trim())
             .filter { it.isNotBlank() }
+            .filter { it == currentValue.trim() || it != MULTIPHASE_CLASS_NAME }
             .distinct()
     }
 
