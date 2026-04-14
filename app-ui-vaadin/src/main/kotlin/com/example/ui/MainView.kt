@@ -108,6 +108,19 @@ class MainView : VerticalLayout() {
         isClearButtonVisible = true
         setWidth("110px")
     }
+    private val maskOverlayModeSelector = ComboBox<MaskOverlayMode>().apply {
+        label = "Маски"
+        setItems(MaskOverlayMode.entries)
+        value = MaskOverlayMode.MULTIPHASE_ONLY
+        isClearButtonVisible = false
+        width = "230px"
+        setItemLabelGenerator { it.label }
+        addValueChangeListener {
+            if (it.value != null) {
+                refreshObjectGallery(resetPaging = false)
+            }
+        }
+    }
     private val selectedObjectTitle = H4("Выберите объект")
     private val propertyEditor = com.vaadin.flow.component.html.Div()
     private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
@@ -265,6 +278,7 @@ class MainView : VerticalLayout() {
             HorizontalLayout(
                 filterAddMenu(),
                 filterControls,
+                maskOverlayModeSelector,
                 Button("Сброс") {
                     clearFilters()
                     refreshObjectGallery(resetPaging = true)
@@ -746,12 +760,16 @@ class MainView : VerticalLayout() {
         onProgress(ImportProgress("Подготовка проекта…", 1, 1, false))
         val projectPreview = rawBySuffix[commonSuffixes.first()] ?: rgbMasks.first()
         val objectsForUi = resolvedObjects.map { cached ->
+            val properties = cached.properties.toMutableMap()
+            cached.properties["mask_crop_file"]?.let { maskFile ->
+                properties["mask_crop_url"] = cacheDir.resolve(maskFile).toString()
+            }
             DatasetObject(
                 id = cached.id,
                 name = cached.name,
                 category = cached.category,
                 previewUrl = cacheDir.resolve(cached.previewFileName).toString(),
-                properties = cached.properties.toMutableMap()
+                properties = properties
             )
         }
 
@@ -768,7 +786,12 @@ class MainView : VerticalLayout() {
     private fun resolveProjectResources(project: DatasetProject): DatasetProject {
         val resolvedPreview = resolvePreviewUrl(project.previewUrl)
         val resolvedObjects = project.objects.map { obj ->
-            obj.copy(previewUrl = resolvePreviewUrl(obj.previewUrl))
+            val resolvedProperties = obj.properties.toMutableMap()
+            obj.properties["mask_crop_url"]?.let { resolvedProperties["mask_crop_url"] = resolvePreviewUrl(it) }
+            obj.copy(
+                previewUrl = resolvePreviewUrl(obj.previewUrl),
+                properties = resolvedProperties
+            )
         }
         return project.copy(previewUrl = resolvedPreview, objects = resolvedObjects)
     }
@@ -1106,6 +1129,29 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "10px"
             style["image-rendering"] = "pixelated"
         }
+        val imageStack = com.vaadin.flow.component.html.Div(image).apply {
+            style["position"] = "relative"
+            style["width"] = "${imageDisplayWidth}px"
+            style["height"] = "${imageDisplayHeight}px"
+            style["display"] = "flex"
+            style["align-items"] = "center"
+            style["justify-content"] = "center"
+        }
+
+        if (shouldShowMaskOverlay(obj)) {
+            val maskOverlay = Image(obj.properties["mask_crop_url"], "${obj.name} mask").apply {
+                style["position"] = "absolute"
+                style["left"] = "0"
+                style["top"] = "0"
+                style["width"] = "${imageDisplayWidth}px"
+                style["height"] = "${imageDisplayHeight}px"
+                style["object-fit"] = "contain"
+                style["opacity"] = "0.42"
+                style["image-rendering"] = "pixelated"
+                style["pointer-events"] = "none"
+            }
+            imageStack.add(maskOverlay)
+        }
 
         val cardTitle = Span(obj.properties["grain_class"] ?: obj.name).apply {
             style["font-weight"] = "600"
@@ -1114,7 +1160,7 @@ class MainView : VerticalLayout() {
             style["line-height"] = "1.25"
         }
 
-        val overlay = com.vaadin.flow.component.html.Div(cardTitle).apply {
+        val titleOverlay = com.vaadin.flow.component.html.Div(cardTitle).apply {
             style["position"] = "absolute"
             style["left"] = "0"
             style["right"] = "0"
@@ -1124,7 +1170,7 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "10px 10px 0 0"
         }
 
-        return com.vaadin.flow.component.html.Div(image, overlay).apply {
+        return com.vaadin.flow.component.html.Div(imageStack, titleOverlay).apply {
             style["position"] = "relative"
             style["display"] = "inline-block"
             style["flex"] = "1 0 ${cardWidth}px"
@@ -1140,6 +1186,17 @@ class MainView : VerticalLayout() {
             style["justify-content"] = "center"
             styleObjectSelection(selected, style)
             addClickListener { onClick() }
+        }
+    }
+
+    private fun shouldShowMaskOverlay(obj: DatasetObject): Boolean {
+        val mode = maskOverlayModeSelector.value ?: MaskOverlayMode.MULTIPHASE_ONLY
+        val hasMaskUrl = !obj.properties["mask_crop_url"].isNullOrBlank()
+        if (!hasMaskUrl) return false
+        return when (mode) {
+            MaskOverlayMode.OFF -> false
+            MaskOverlayMode.MULTIPHASE_ONLY -> obj.properties["object_phase_type"] == "multi_phase"
+            MaskOverlayMode.ALL -> true
         }
     }
 
@@ -1548,6 +1605,12 @@ private enum class ObjectFilter {
     CONFIDENCE,
     ANALYSIS_DATE,
     REVIEWED
+}
+
+private enum class MaskOverlayMode(val label: String) {
+    OFF("Скрыть"),
+    MULTIPHASE_ONLY("Только многофазные"),
+    ALL("Показывать все")
 }
 
 private fun demoProjects(): List<DatasetProject> = emptyList()
