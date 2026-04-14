@@ -279,6 +279,7 @@ class MainView : VerticalLayout() {
             justifyContentMode = FlexComponent.JustifyContentMode.BETWEEN
             isPadding = false
             isSpacing = true
+            style["padding-left"] = "12px"
         }
 
     private fun projectHeaderWithActions(): Component =
