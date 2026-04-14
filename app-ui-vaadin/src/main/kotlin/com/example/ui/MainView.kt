@@ -129,7 +129,9 @@ class MainView : VerticalLayout() {
         initFilterListeners()
 
         val leftPanel = panel(projectHeaderWithActions(), projectList)
-        val centerPanel = panel(objectHeaderWithFilters(), objectGallery)
+        val centerPanel = panel(objectHeaderWithFilters(), objectGallery).apply {
+            style["padding-left"] = "0"
+        }
         val rightPanel = panel(
             "Свойства объекта",
             VerticalLayout(selectedObjectTitle, propertyEditor).apply {
