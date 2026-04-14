@@ -174,7 +174,7 @@ class MainView : VerticalLayout() {
         objectGallery.style["justify-content"] = "flex-start"
         objectGallery.style["align-items"] = "flex-start"
         objectGallery.style["gap"] = "12px"
-        objectGallery.style["padding"] = "4px"
+        objectGallery.style["padding"] = "12px"
         objectGallery.style["box-sizing"] = "border-box"
         objectGallery.style["align-content"] = "flex-start"
         objectGallery.setWidthFull()
