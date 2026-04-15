@@ -70,6 +70,7 @@ class MainView : VerticalLayout() {
     private val projectList = com.vaadin.flow.component.html.Div()
     private val objectGallery = com.vaadin.flow.component.html.Div()
     private val activeFilters = linkedSetOf<ObjectFilter>()
+    private val filterAddMenuBar = MenuBar()
     private val filterMenuItems = mutableMapOf<ObjectFilter, MenuItem>()
     private val filterControls = HorizontalLayout().apply {
         isPadding = false
@@ -353,26 +354,58 @@ class MainView : VerticalLayout() {
         }
 
     private fun filterAddMenu(): MenuBar =
-        MenuBar().apply {
-            val root = addIconItem(VaadinIcon.FILTER.create())
-            root.subMenu.addItem("Grain class") { addFilter(ObjectFilter.GRAIN_CLASS) }.also {
-                filterMenuItems[ObjectFilter.GRAIN_CLASS] = it
-            }
-            root.subMenu.addItem("Статус") { addFilter(ObjectFilter.STATUS) }.also {
-                filterMenuItems[ObjectFilter.STATUS] = it
-            }
-            root.subMenu.addItem("Уверенность") { addFilter(ObjectFilter.CONFIDENCE) }.also {
-                filterMenuItems[ObjectFilter.CONFIDENCE] = it
-            }
-            root.subMenu.addItem("Дата анализа") { addFilter(ObjectFilter.ANALYSIS_DATE) }.also {
-                filterMenuItems[ObjectFilter.ANALYSIS_DATE] = it
-            }
-            root.subMenu.addItem("Проверено оператором") { addFilter(ObjectFilter.REVIEWED) }.also {
-                filterMenuItems[ObjectFilter.REVIEWED] = it
-            }
-            root.element.setProperty("title", "Фильтры")
-            styleToolbarMenu(this, root)
+        filterAddMenuBar.apply {
+            rebuildFilterAddMenu()
         }
+
+    private fun rebuildFilterAddMenu() {
+        filterAddMenuBar.removeAll()
+        filterMenuItems.clear()
+
+        val root = filterAddMenuBar.addIconItem(VaadinIcon.FILTER.create())
+        val grainClassRoot = root.subMenu.addItem("Grain class")
+        val grainClasses = selectedProject
+            ?.objects
+            ?.mapNotNull { it.properties["grain_class"]?.trim() }
+            ?.filter { it.isNotBlank() }
+            ?.distinct()
+            ?.sorted()
+            .orEmpty()
+
+        if (grainClasses.isEmpty()) {
+            grainClassRoot.subMenu.addItem("Нет классов").apply { isEnabled = false }
+        } else {
+            grainClasses.forEach { grainClass ->
+                grainClassRoot.subMenu.addItem(grainClass) {
+                    applyGrainClassQuickFilter(grainClass)
+                }
+            }
+        }
+
+        root.subMenu.addItem("Статус") { addFilter(ObjectFilter.STATUS) }.also {
+            filterMenuItems[ObjectFilter.STATUS] = it
+        }
+        root.subMenu.addItem("Уверенность") { addFilter(ObjectFilter.CONFIDENCE) }.also {
+            filterMenuItems[ObjectFilter.CONFIDENCE] = it
+        }
+        root.subMenu.addItem("Дата анализа") { addFilter(ObjectFilter.ANALYSIS_DATE) }.also {
+            filterMenuItems[ObjectFilter.ANALYSIS_DATE] = it
+        }
+        root.subMenu.addItem("Проверено оператором") { addFilter(ObjectFilter.REVIEWED) }.also {
+            filterMenuItems[ObjectFilter.REVIEWED] = it
+        }
+        root.element.setProperty("title", "Фильтры")
+        styleToolbarMenu(filterAddMenuBar, root)
+    }
+
+    private fun applyGrainClassQuickFilter(grainClass: String) {
+        activeFilters.add(ObjectFilter.GRAIN_CLASS)
+        if (grainClassFilter.value != grainClass) {
+            grainClassFilter.value = grainClass
+        }
+        rebuildVisibleFilterControls()
+        refreshObjectGallery(resetPaging = true)
+    }
 
     private fun cardFieldsMenu(): MenuBar =
         cardFieldsMenuBar.apply {
@@ -563,6 +596,7 @@ class MainView : VerticalLayout() {
         val actualGrainClassValue = grainClassFilter.value?.trim().orEmpty()
         applyColorIconToCombo(grainClassFilter, grainClassColors[actualGrainClassValue])
         statusFilter.setItems(statusItems)
+        rebuildFilterAddMenu()
     }
 
     private fun refreshObjectGallery(resetPaging: Boolean = false) {
