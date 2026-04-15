@@ -36,6 +36,10 @@ import java.util.Locale
 import java.security.MessageDigest
 import java.util.stream.Collectors
 import java.util.concurrent.CancellationException
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.math.max
@@ -47,6 +51,7 @@ import javax.imageio.ImageIO
 class MainView : VerticalLayout() {
     companion object {
         private const val OBJECT_PAGE_SIZE = 200
+        private const val MASK_PROCESS_TIMEOUT_MINUTES = 3L
         private const val MULTIPHASE_CLASS_NAME = "Многофазный"
         private val log = LoggerFactory.getLogger(MainView::class.java)
     }
@@ -763,18 +768,31 @@ class MainView : VerticalLayout() {
             onProgress(ImportProgress("Загрузка из кэша…", 1, 1, false))
             cachedObjects
         } else {
-            val generated = commonSuffixes.flatMapIndexed { index, suffix ->
+            val generated = mutableListOf<CachedDatasetObject>()
+            commonSuffixes.forEachIndexed { index, suffix ->
                 throwIfCancelled(cancelRequested)
                 onProgress(ImportProgress("Обработка масок: ${index + 1}/${commonSuffixes.size}", index, commonSuffixes.size, false))
-                extractObjectsFromPairToCache(
-                    datasetDirectoryName = datasetDirectoryName,
-                    suffix = suffix,
-                    sourceImagePath = rawBySuffix.getValue(suffix),
-                    maskImagePath = maskBySuffix.getValue(suffix),
-                    legend = legend,
-                    cacheDir = cacheDir,
-                    cancelRequested = cancelRequested
-                )
+                val sourceImagePath = rawBySuffix.getValue(suffix)
+                val maskImagePath = maskBySuffix.getValue(suffix)
+                val extractedObjects = runCatching {
+                    executeMaskExtractionWithTimeout(
+                        datasetDirectoryName = datasetDirectoryName,
+                        suffix = suffix,
+                        sourceImagePath = sourceImagePath,
+                        maskImagePath = maskImagePath,
+                        legend = legend,
+                        cacheDir = cacheDir,
+                        cancelRequested = cancelRequested
+                    )
+                }.getOrElse { error ->
+                    throw IllegalStateException(
+                        "Ошибка при обработке пары ${index + 1}/${commonSuffixes.size} " +
+                            "(индекс=$suffix, source=${sourceImagePath.fileName}, mask=${maskImagePath.fileName}): " +
+                            (error.message ?: "неизвестная ошибка"),
+                        error
+                    )
+                }
+                generated += extractedObjects
             }
             onProgress(ImportProgress("Сохранение кэша…", commonSuffixes.size, commonSuffixes.size, false))
             saveCachedObjects(manifestPath, generated)
@@ -900,6 +918,45 @@ class MainView : VerticalLayout() {
         }
 
         return objects
+    }
+
+    private fun executeMaskExtractionWithTimeout(
+        datasetDirectoryName: String,
+        suffix: String,
+        sourceImagePath: Path,
+        maskImagePath: Path,
+        legend: Map<Int, String>,
+        cacheDir: Path,
+        cancelRequested: AtomicBoolean
+    ): List<CachedDatasetObject> {
+        val extractorExecutor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "mask-extract-$suffix").apply { isDaemon = true }
+        }
+        return try {
+            val task = extractorExecutor.submit<List<CachedDatasetObject>> {
+                extractObjectsFromPairToCache(
+                    datasetDirectoryName = datasetDirectoryName,
+                    suffix = suffix,
+                    sourceImagePath = sourceImagePath,
+                    maskImagePath = maskImagePath,
+                    legend = legend,
+                    cacheDir = cacheDir,
+                    cancelRequested = cancelRequested
+                )
+            }
+            task.get(MASK_PROCESS_TIMEOUT_MINUTES, TimeUnit.MINUTES)
+        } catch (timeout: TimeoutException) {
+            cancelRequested.set(true)
+            throw IllegalStateException(
+                "Превышено время обработки маски для индекса $suffix " +
+                    "(>${MASK_PROCESS_TIMEOUT_MINUTES} минут).",
+                timeout
+            )
+        } catch (executionError: ExecutionException) {
+            throw (executionError.cause ?: executionError)
+        } finally {
+            extractorExecutor.shutdownNow()
+        }
     }
 
     private fun collectConnectedComponent(
