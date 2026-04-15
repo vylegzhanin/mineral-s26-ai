@@ -125,7 +125,8 @@ class MainView : VerticalLayout() {
     private val cardFieldsPanelTitle = H4("Поля карточек")
     private val cardFieldsPanel = com.vaadin.flow.component.html.Div()
     private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
-    private val cardVisibleFields = linkedSetOf("grain_class")
+    private val cardVisibleFields = linkedSetOf("phase_area_shares")
+    private val cardFieldOrder = mutableListOf<String>()
     private var selectedObjectCard: com.vaadin.flow.component.html.Div? = null
     private var visibleObjectLimit: Int = OBJECT_PAGE_SIZE
 
@@ -203,6 +204,11 @@ class MainView : VerticalLayout() {
         propertyEditor.style["box-sizing"] = "border-box"
         propertyEditor.style["overflow"] = "auto"
         propertyEditor.setSizeFull()
+
+        cardFieldsPanel.style["display"] = "flex"
+        cardFieldsPanel.style["flex-direction"] = "column"
+        cardFieldsPanel.style["overflow"] = "auto"
+        cardFieldsPanel.setSizeFull()
     }
 
     private fun selectProject(project: DatasetProject) {
@@ -1305,13 +1311,12 @@ class MainView : VerticalLayout() {
     }
 
     private fun overlayLinesForCard(obj: DatasetObject, grainClassColor: String): List<OverlayLine> =
-        cardVisibleFields
+        orderedVisibleCardFields()
             .asSequence()
-            .sortedBy { field -> if (field == "grain_class") 0 else 1 }
             .flatMap { field ->
                 if (field == "phase_area_shares") {
                     val rawJson = obj.properties[field].orEmpty()
-                    phaseAreaShareOverlayLines(rawJson).asSequence()
+                    phaseAreaShareOverlayLines(obj, rawJson).asSequence()
                 } else {
                     val value = obj.properties[field]?.trim().orEmpty()
                     if (value.isBlank()) {
@@ -1329,10 +1334,11 @@ class MainView : VerticalLayout() {
             }
             .toList()
 
-    private fun phaseAreaShareOverlayLines(rawJson: String): List<OverlayLine> {
+    private fun phaseAreaShareOverlayLines(obj: DatasetObject, rawJson: String): List<OverlayLine> {
         if (rawJson.isBlank()) return emptyList()
         val root = runCatching { ObjectMapper().readTree(rawJson) }.getOrNull() ?: return emptyList()
         if (!root.isObject) return emptyList()
+        val isSinglePhaseObject = obj.properties["object_phase_type"]?.trim()?.lowercase() != "multi_phase"
         val colorsByPhase = grainClassColorMapForCurrentDataset()
 
         return root.fields().asSequence()
@@ -1344,9 +1350,19 @@ class MainView : VerticalLayout() {
                     ?.let { normalizeMaskColor(it) }
                     ?.let { "#" + it.removePrefix("0x") }
                     ?: "white"
-                OverlayLine(text = "$phaseName: $rounded", color = phaseColor, isPrimary = false)
+                OverlayLine(
+                    text = if (isSinglePhaseObject) phaseName else "$phaseName: $rounded",
+                    color = phaseColor,
+                    isPrimary = false
+                )
             }
             .toList()
+    }
+
+    private fun orderedVisibleCardFields(): List<String> {
+        val knownFields = availableCardFieldsForPanel()
+        syncCardFieldOrder(knownFields)
+        return cardFieldOrder.filter { it in cardVisibleFields }
     }
 
     private fun styleSelection(selected: Boolean, style: Style) {
@@ -1682,12 +1698,13 @@ class MainView : VerticalLayout() {
 
     private fun buildCardFieldsPanel(): Component {
         val fields = availableCardFieldsForPanel()
+        syncCardFieldOrder(fields)
         val list = VerticalLayout().apply {
             isPadding = false
             isSpacing = true
             setWidthFull()
         }
-        fields.forEach { field ->
+        cardFieldOrder.forEachIndexed { index, field ->
             val toggle = Checkbox().apply {
                 value = field in cardVisibleFields
                 addValueChangeListener {
@@ -1695,16 +1712,51 @@ class MainView : VerticalLayout() {
                     refreshObjectGallery(resetPaging = false)
                 }
             }
+            val moveUp = Button("↑") {
+                if (index > 0) {
+                    cardFieldOrder.removeAt(index)
+                    cardFieldOrder.add(index - 1, field)
+                    updateRightPanel()
+                    refreshObjectGallery(resetPaging = false)
+                }
+            }.apply {
+                isEnabled = index > 0
+            }
+            val moveDown = Button("↓") {
+                if (index < cardFieldOrder.lastIndex) {
+                    cardFieldOrder.removeAt(index)
+                    cardFieldOrder.add(index + 1, field)
+                    updateRightPanel()
+                    refreshObjectGallery(resetPaging = false)
+                }
+            }.apply {
+                isEnabled = index < cardFieldOrder.lastIndex
+            }
             list.add(
-                HorizontalLayout(toggle, Span(prettyLabel(field))).apply {
+                HorizontalLayout(
+                    HorizontalLayout(toggle, Span(prettyLabel(field))).apply {
+                        isPadding = false
+                        isSpacing = true
+                        setAlignItems(FlexComponent.Alignment.BASELINE)
+                        style["gap"] = "8px"
+                    },
+                    HorizontalLayout(moveUp, moveDown).apply {
+                        isPadding = false
+                        isSpacing = true
+                        style["gap"] = "4px"
+                    }
+                ).apply {
+                    setWidthFull()
                     isPadding = false
                     isSpacing = true
-                    setAlignItems(FlexComponent.Alignment.BASELINE)
-                    style["gap"] = "8px"
+                    setAlignItems(FlexComponent.Alignment.CENTER)
+                    style["justify-content"] = "space-between"
                 }
             )
         }
-        return propertySection("Показывать на карточке", list)
+        return propertySection("Показывать на карточке", list).apply {
+            element.style["width"] = "100%"
+        }
     }
 
     private fun availableCardFieldsForPanel(): List<String> {
@@ -1717,8 +1769,18 @@ class MainView : VerticalLayout() {
             .orEmpty()
 
         val advancedFields = setOf("meta_status", "meta_confidence", "meta_analysis_date", "meta_reviewed")
-        return (projectFields + advancedFields + setOf("grain_class"))
-            .sortedWith(compareBy<String> { if (it == "grain_class") 0 else 1 }.thenBy { it })
+        return (projectFields + advancedFields + setOf("grain_class", "phase_area_shares"))
+            .sorted()
+    }
+
+    private fun syncCardFieldOrder(fields: List<String>) {
+        val fieldsSet = fields.toSet()
+        cardFieldOrder.removeIf { it !in fieldsSet }
+        fields.forEach { field ->
+            if (field !in cardFieldOrder) {
+                cardFieldOrder.add(field)
+            }
+        }
     }
 
     private data class OverlayLine(
