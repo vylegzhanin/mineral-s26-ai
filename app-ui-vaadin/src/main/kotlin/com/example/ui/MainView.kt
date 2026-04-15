@@ -316,10 +316,14 @@ class MainView : VerticalLayout() {
                 cardFieldsMenu(),
                 filterAddMenu(),
                 filterControls,
-                showMasksCheckbox,
-                Button("Сброс") {
+                Button(VaadinIcon.REFRESH.create()) {
                     clearFilters()
                     refreshObjectGallery(resetPaging = true)
+                }.apply {
+                    element.setAttribute("title", "Сбросить фильтры")
+                    style["padding"] = "0"
+                    style["min-width"] = "var(--lumo-size-m)"
+                    style["background"] = "transparent"
                 }
             ).apply {
                 isPadding = false
@@ -367,6 +371,7 @@ class MainView : VerticalLayout() {
                 filterMenuItems[ObjectFilter.REVIEWED] = it
             }
             root.element.setProperty("title", "Фильтры")
+            styleToolbarMenu(this, root)
         }
 
     private fun cardFieldsMenu(): MenuBar =
@@ -379,6 +384,10 @@ class MainView : VerticalLayout() {
         val root = menuBar.addItem(VaadinIcon.EYE.create())
         root.element.setProperty("title", "Показывать на карточке")
         val subMenu = root.subMenu
+        styleToolbarMenu(menuBar, root)
+
+        subMenu.addItem(showMasksCheckbox)
+        subMenu.addItem("────────").apply { isEnabled = false }
 
         syncCardFieldOrder(availableCardFieldsForPanel())
         reorderCardFieldOrderBySelection()
@@ -411,6 +420,13 @@ class MainView : VerticalLayout() {
         if (!activeFilters.add(filter)) return
         rebuildVisibleFilterControls()
         refreshObjectGallery(resetPaging = true)
+    }
+
+    private fun styleToolbarMenu(menuBar: MenuBar, root: MenuItem) {
+        menuBar.style["padding"] = "0"
+        menuBar.style["background"] = "transparent"
+        root.element.style["padding"] = "0"
+        root.element.style["background"] = "transparent"
     }
 
     private fun removeFilter(filter: ObjectFilter) {
