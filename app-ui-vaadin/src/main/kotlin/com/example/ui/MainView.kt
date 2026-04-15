@@ -25,6 +25,7 @@ import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
 import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.dom.Style
+import com.vaadin.flow.component.icon.VaadinIcon
 import com.vaadin.flow.server.StreamResource
 import com.vaadin.flow.router.Route
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -126,6 +127,7 @@ class MainView : VerticalLayout() {
     private val selectedObjectTitle = H4("Выберите объект")
     private val propertyEditor = com.vaadin.flow.component.html.Div()
     private val cardFieldsPanelTitle = H4("Поля карточек")
+    private val cardFieldsMenuBar = MenuBar()
     private val cardFieldsPanel = com.vaadin.flow.component.html.Div()
     private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
     private val cardVisibleFields = linkedSetOf("phase_area_shares")
@@ -222,6 +224,7 @@ class MainView : VerticalLayout() {
         renderProjects()
         refreshFilterOptions(project.objects)
         refreshObjectGallery(resetPaging = true)
+        rebuildCardFieldsMenu(cardFieldsMenuBar)
         updateRightPanel()
     }
 
@@ -310,6 +313,7 @@ class MainView : VerticalLayout() {
         HorizontalLayout(
             objectHeader,
             HorizontalLayout(
+                cardFieldsMenu(),
                 filterAddMenu(),
                 filterControls,
                 showMasksCheckbox,
@@ -346,7 +350,7 @@ class MainView : VerticalLayout() {
 
     private fun filterAddMenu(): MenuBar =
         MenuBar().apply {
-            val root = addItem("Фильтр +")
+            val root = addItem(VaadinIcon.FILTER.create())
             root.subMenu.addItem("Grain class") { addFilter(ObjectFilter.GRAIN_CLASS) }.also {
                 filterMenuItems[ObjectFilter.GRAIN_CLASS] = it
             }
@@ -362,7 +366,46 @@ class MainView : VerticalLayout() {
             root.subMenu.addItem("Проверено оператором") { addFilter(ObjectFilter.REVIEWED) }.also {
                 filterMenuItems[ObjectFilter.REVIEWED] = it
             }
+            root.element.setProperty("title", "Фильтры")
         }
+
+    private fun cardFieldsMenu(): MenuBar =
+        cardFieldsMenuBar.apply {
+            rebuildCardFieldsMenu(this)
+        }
+
+    private fun rebuildCardFieldsMenu(menuBar: MenuBar) {
+        menuBar.removeAll()
+        val root = menuBar.addItem(VaadinIcon.EYE.create())
+        root.element.setProperty("title", "Показывать на карточке")
+        val subMenu = root.subMenu
+
+        syncCardFieldOrder(availableCardFieldsForPanel())
+        reorderCardFieldOrderBySelection()
+
+        val selectedFields = cardFieldOrder.filter { it in cardVisibleFields }
+        val unselectedFields = cardFieldOrder.filterNot { it in cardVisibleFields }
+
+        selectedFields.forEach { field ->
+            subMenu.addItem("☑ ${prettyLabel(field)}") {
+                cardVisibleFields.remove(field)
+                refreshObjectGallery(resetPaging = false)
+                rebuildCardFieldsMenu(menuBar)
+            }
+        }
+
+        if (unselectedFields.isNotEmpty()) {
+            val addFieldItem = subMenu.addItem("Добавить поле")
+            unselectedFields.forEach { field ->
+                addFieldItem.subMenu.addItem(prettyLabel(field)) {
+                    cardVisibleFields.add(field)
+                    reorderCardFieldOrderBySelection()
+                    refreshObjectGallery(resetPaging = false)
+                    rebuildCardFieldsMenu(menuBar)
+                }
+            }
+        }
+    }
 
     private fun addFilter(filter: ObjectFilter) {
         if (!activeFilters.add(filter)) return
@@ -1391,22 +1434,16 @@ class MainView : VerticalLayout() {
 
     private fun updateRightPanel() {
         propertyEditor.removeAll()
-        cardFieldsPanel.removeAll()
-
         val obj = selectedObject
-        if (obj == null) {
-            cardFieldsPanelTitle.text = "Поля карточек"
-            selectedObjectTitle.isVisible = false
-            propertyEditor.isVisible = false
-            cardFieldsPanel.isVisible = true
-            cardFieldsPanel.add(buildCardFieldsPanel())
-            return
-        }
-
         cardFieldsPanelTitle.text = "Свойства объекта"
         selectedObjectTitle.isVisible = true
         propertyEditor.isVisible = true
         cardFieldsPanel.isVisible = false
+        if (obj == null) {
+            selectedObjectTitle.text = "Выберите объект"
+            propertyEditor.add(Paragraph("Выберите объект, чтобы увидеть и отредактировать его свойства."))
+            return
+        }
         selectedObjectTitle.text = "Свойства: ${obj.name}"
         propertyEditor.add(
             propertySection("Основные параметры", buildPropertyForm(obj)),
