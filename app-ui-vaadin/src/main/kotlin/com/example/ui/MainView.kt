@@ -124,6 +124,7 @@ class MainView : VerticalLayout() {
         value = false
         addValueChangeListener {
             refreshObjectGallery(resetPaging = false)
+            rebuildCardFieldsMenu(cardFieldsMenuBar)
         }
     }
     private val propertyEditor = com.vaadin.flow.component.html.Div()
