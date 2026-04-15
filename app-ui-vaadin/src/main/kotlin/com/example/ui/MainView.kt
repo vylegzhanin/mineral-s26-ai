@@ -125,7 +125,6 @@ class MainView : VerticalLayout() {
             refreshObjectGallery(resetPaging = false)
         }
     }
-    private val selectedObjectTitle = H4("Выберите объект")
     private val propertyEditor = com.vaadin.flow.component.html.Div()
     private val cardFieldsPanelTitle = H4("Поля карточек")
     private val cardFieldsMenuBar = MenuBar()
@@ -156,7 +155,7 @@ class MainView : VerticalLayout() {
         val centerPanel = panel(objectHeaderWithFilters(), objectGallery).apply {
             style["padding-left"] = "0"
         }
-        val rightPanelBody = VerticalLayout(selectedObjectTitle, propertyEditor, cardFieldsPanel).apply {
+        val rightPanelBody = VerticalLayout(propertyEditor, cardFieldsPanel).apply {
             setSizeFull()
             isPadding = false
             isSpacing = true
@@ -400,7 +399,6 @@ class MainView : VerticalLayout() {
         reorderCardFieldOrderBySelection()
 
         val selectedFields = cardFieldOrder.filter { it in cardVisibleFields }
-        val unselectedFields = cardFieldOrder.filterNot { it in cardVisibleFields }
 
         selectedFields.forEach { field ->
             subMenu.addItem(prettyLabel(field)) {
@@ -413,15 +411,20 @@ class MainView : VerticalLayout() {
             }
         }
 
-        if (unselectedFields.isNotEmpty()) {
-            val addFieldItem = subMenu.addItem("Добавить поле")
-            unselectedFields.forEach { field ->
-                addFieldItem.subMenu.addItem(prettyLabel(field)) {
+        val addFieldItem = subMenu.addItem("Поля")
+        cardFieldOrder.forEach { field ->
+            addFieldItem.subMenu.addItem(prettyLabel(field)) {
+                if (field in cardVisibleFields) {
+                    cardVisibleFields.remove(field)
+                } else {
                     cardVisibleFields.add(field)
                     reorderCardFieldOrderBySelection()
-                    refreshObjectGallery(resetPaging = false)
-                    rebuildCardFieldsMenu(menuBar)
                 }
+                refreshObjectGallery(resetPaging = false)
+                rebuildCardFieldsMenu(menuBar)
+            }.apply {
+                isCheckable = true
+                isChecked = field in cardVisibleFields
             }
         }
     }
@@ -1462,15 +1465,12 @@ class MainView : VerticalLayout() {
         propertyEditor.removeAll()
         val obj = selectedObject
         cardFieldsPanelTitle.text = "Свойства объекта"
-        selectedObjectTitle.isVisible = true
         propertyEditor.isVisible = true
         cardFieldsPanel.isVisible = false
         if (obj == null) {
-            selectedObjectTitle.text = "Выберите объект"
             propertyEditor.add(Paragraph("Выберите объект, чтобы увидеть и отредактировать его свойства."))
             return
         }
-        selectedObjectTitle.text = "Свойства: ${obj.name}"
         propertyEditor.add(
             propertySection("Основные параметры", buildPropertyForm(obj)),
             propertySection("Расширенные атрибуты", buildAdvancedControls(obj))
