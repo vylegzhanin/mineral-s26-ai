@@ -122,6 +122,8 @@ class MainView : VerticalLayout() {
     }
     private val selectedObjectTitle = H4("Выберите объект")
     private val propertyEditor = com.vaadin.flow.component.html.Div()
+    private val cardFieldsPanelTitle = H4("Поля карточек")
+    private val cardFieldsPanel = com.vaadin.flow.component.html.Div()
     private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
     private val cardVisibleFields = linkedSetOf("grain_class")
     private var selectedObjectCard: com.vaadin.flow.component.html.Div? = null
@@ -146,16 +148,13 @@ class MainView : VerticalLayout() {
         val centerPanel = panel(objectHeaderWithFilters(), objectGallery).apply {
             style["padding-left"] = "0"
         }
-        val rightPanel = panel(
-            "Свойства объекта",
-            VerticalLayout(selectedObjectTitle, propertyEditor).apply {
-                setSizeFull()
-                isPadding = false
-                isSpacing = true
-                setFlexGrow(1.0, propertyEditor)
-            },
-            bodyScrollable = false
-        )
+        val rightPanelBody = VerticalLayout(selectedObjectTitle, propertyEditor, cardFieldsPanel).apply {
+            setSizeFull()
+            isPadding = false
+            isSpacing = true
+            setFlexGrow(1.0, propertyEditor, cardFieldsPanel)
+        }
+        val rightPanel = panel(cardFieldsPanelTitle, rightPanelBody, bodyScrollable = false)
 
         // 20% | 60% | 20%: настраивается пользователем через drag splitters
         val centerRightSplit = SplitLayout(centerPanel, rightPanel).apply {
@@ -213,13 +212,20 @@ class MainView : VerticalLayout() {
         renderProjects()
         refreshFilterOptions(project.objects)
         refreshObjectGallery(resetPaging = true)
-        updateProperties(null)
+        updateRightPanel()
     }
 
     private fun selectObject(obj: DatasetObject) {
         selectedObject = obj
         updateObjectSelection(obj)
-        updateProperties(obj)
+        updateRightPanel()
+    }
+
+    private fun clearSelectedObject() {
+        selectedObject = null
+        selectedObjectCard?.let { styleObjectSelection(false, it.style) }
+        selectedObjectCard = null
+        updateRightPanel()
     }
 
     private fun renderObjects(objects: List<DatasetObject>) {
@@ -233,7 +239,13 @@ class MainView : VerticalLayout() {
 
         val visibleObjects = objects.take(visibleObjectLimit)
         visibleObjects.forEach { obj ->
-            val card = objectCard(obj, obj == selectedObject) { selectObject(obj) }
+            val card = objectCard(obj, obj == selectedObject) {
+                if (selectedObject?.id == obj.id) {
+                    clearSelectedObject()
+                } else {
+                    selectObject(obj)
+                }
+            }
             objectCardsById[obj.id] = card
             if (obj == selectedObject) {
                 selectedObjectCard = card
@@ -483,7 +495,7 @@ class MainView : VerticalLayout() {
         if (selectedObject != null && filteredObjects.none { it.id == selectedObject?.id }) {
             selectedObject = null
             selectedObjectCard = null
-            updateProperties(null)
+            updateRightPanel()
         }
 
         objectHeader.text = "Объекты (${filteredObjects.size}/${project.objects.size})"
@@ -1357,25 +1369,28 @@ class MainView : VerticalLayout() {
         style["outline-offset"] = "0"
     }
 
-    private fun updateProperties(obj: DatasetObject?) {
+    private fun updateRightPanel() {
         propertyEditor.removeAll()
+        cardFieldsPanel.removeAll()
 
+        val obj = selectedObject
         if (obj == null) {
-            selectedObjectTitle.text = "Выберите объект"
-            propertyEditor.add(Paragraph("Выберите объект, чтобы увидеть и отредактировать его свойства."))
+            cardFieldsPanelTitle.text = "Поля карточек"
+            selectedObjectTitle.isVisible = false
+            propertyEditor.isVisible = false
+            cardFieldsPanel.isVisible = true
+            cardFieldsPanel.add(buildCardFieldsPanel())
             return
         }
 
+        cardFieldsPanelTitle.text = "Свойства объекта"
+        selectedObjectTitle.isVisible = true
+        propertyEditor.isVisible = true
+        cardFieldsPanel.isVisible = false
         selectedObjectTitle.text = "Свойства: ${obj.name}"
         propertyEditor.add(
-            propertySection(
-                "Основные параметры",
-                buildPropertyForm(obj)
-            ),
-            propertySection(
-                "Расширенные атрибуты",
-                buildAdvancedControls(obj)
-            )
+            propertySection("Основные параметры", buildPropertyForm(obj)),
+            propertySection("Расширенные атрибуты", buildAdvancedControls(obj))
         )
     }
 
@@ -1393,12 +1408,7 @@ class MainView : VerticalLayout() {
             .filterNot { it.key == "mask_color_rgb" }
             .forEach { (name, value) ->
                 val editor = propertyInput(name, value, obj)
-                val withVisibilityToggle = withCardVisibilityToggle(
-                    fieldName = name,
-                    editor = editor,
-                    defaultVisible = name == "grain_class"
-                )
-                form.addFormItem(withVisibilityToggle, prettyLabel(name))
+                form.addFormItem(editor, prettyLabel(name))
             }
 
         return form
@@ -1666,35 +1676,49 @@ class MainView : VerticalLayout() {
         obj.properties.putIfAbsent("meta_analysis_date", analysisDate.value?.toString().orEmpty())
         obj.properties.putIfAbsent("meta_reviewed", reviewed.value.toString())
 
-        form.add(
-            withCardVisibilityToggle("meta_status", status, defaultVisible = false),
-            withCardVisibilityToggle("meta_confidence", confidence, defaultVisible = false),
-            withCardVisibilityToggle("meta_analysis_date", analysisDate, defaultVisible = false),
-            withCardVisibilityToggle("meta_reviewed", reviewed, defaultVisible = false)
-        )
+        form.add(status, confidence, analysisDate, reviewed)
         return form
     }
 
-    private fun withCardVisibilityToggle(fieldName: String, editor: Component, defaultVisible: Boolean): Component {
-        if (defaultVisible) {
-            cardVisibleFields.add(fieldName)
-        }
-        val toggle = Checkbox().apply {
-            value = fieldName in cardVisibleFields
-            addValueChangeListener {
-                if (it.value) cardVisibleFields.add(fieldName) else cardVisibleFields.remove(fieldName)
-                refreshObjectGallery(resetPaging = false)
-            }
-            element.setProperty("title", "Показывать на карточке")
-        }
-        return HorizontalLayout(editor, toggle).apply {
-            setWidthFull()
+    private fun buildCardFieldsPanel(): Component {
+        val fields = availableCardFieldsForPanel()
+        val list = VerticalLayout().apply {
             isPadding = false
             isSpacing = true
-            setAlignItems(FlexComponent.Alignment.BASELINE)
-            setFlexGrow(1.0, editor)
-            style["gap"] = "6px"
+            setWidthFull()
         }
+        fields.forEach { field ->
+            val toggle = Checkbox().apply {
+                value = field in cardVisibleFields
+                addValueChangeListener {
+                    if (it.value) cardVisibleFields.add(field) else cardVisibleFields.remove(field)
+                    refreshObjectGallery(resetPaging = false)
+                }
+            }
+            list.add(
+                HorizontalLayout(toggle, Span(prettyLabel(field))).apply {
+                    isPadding = false
+                    isSpacing = true
+                    setAlignItems(FlexComponent.Alignment.BASELINE)
+                    style["gap"] = "8px"
+                }
+            )
+        }
+        return propertySection("Показывать на карточке", list)
+    }
+
+    private fun availableCardFieldsForPanel(): List<String> {
+        val projectFields = selectedProject
+            ?.objects
+            ?.asSequence()
+            ?.flatMap { it.properties.keys.asSequence() }
+            ?.filterNot { it == "mask_color_rgb" }
+            ?.toSet()
+            .orEmpty()
+
+        val advancedFields = setOf("meta_status", "meta_confidence", "meta_analysis_date", "meta_reviewed")
+        return (projectFields + advancedFields + setOf("grain_class"))
+            .sortedWith(compareBy<String> { if (it == "grain_class") 0 else 1 }.thenBy { it })
     }
 
     private data class OverlayLine(
