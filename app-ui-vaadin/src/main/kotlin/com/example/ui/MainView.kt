@@ -261,8 +261,20 @@ class MainView : VerticalLayout() {
     private fun renderProjects() {
         projectHeader.text = "Проекты (${projects.size})"
         projectList.removeAll()
+        val projectsByBatch = linkedMapOf<String, MutableList<DatasetProject>>()
         projects.forEach { project ->
-            projectList.add(projectCard(project, project == selectedProject) { selectProject(project) })
+            projectsByBatch.getOrPut(project.batch.ifBlank { "Без партии" }) { mutableListOf() }.add(project)
+        }
+        projectsByBatch.forEach { (batchName, groupedProjects) ->
+            projectList.add(
+                H5("Партия: $batchName").apply {
+                    style["margin"] = "4px 4px 0"
+                    style["color"] = "var(--lumo-secondary-text-color)"
+                }
+            )
+            groupedProjects.forEach { project ->
+                projectList.add(projectCard(project, project == selectedProject) { selectProject(project) })
+            }
         }
     }
 
@@ -533,10 +545,18 @@ class MainView : VerticalLayout() {
             placeholder = "Выберите каталог"
             setWidthFull()
         }
+        val batchField = TextField("Партия").apply {
+            placeholder = "Введите имя партии"
+            setWidthFull()
+        }
+        datasetSelector.addValueChangeListener { event ->
+            val selectedPath = event.value?.relativePath ?: return@addValueChangeListener
+            batchField.value = defaultBatchName(selectedPath)
+        }
 
         val dialog = Dialog().apply {
             headerTitle = "Импорт проекта"
-            add(VerticalLayout(datasetSelector).apply {
+            add(VerticalLayout(datasetSelector, batchField).apply {
                 isPadding = false
                 isSpacing = true
                 setWidth("460px")
@@ -573,6 +593,7 @@ class MainView : VerticalLayout() {
                     .addThemeVariants(NotificationVariant.LUMO_CONTRAST)
                 return@addClickListener
             }
+            val batchName = batchField.value.trim().ifBlank { defaultBatchName(selectedFolder) }
             if (importInProgress) {
                 return@addClickListener
             }
@@ -591,7 +612,7 @@ class MainView : VerticalLayout() {
 
             thread(name = "dataset-import-$selectedFolder", isDaemon = true) {
                 val importedProject = runCatching {
-                    importProjectFromDataset(selectedFolder, cancelRequested) { progress ->
+                    importProjectFromDataset(selectedFolder, batchName, cancelRequested) { progress ->
                         runCatching {
                             currentUi.accessSynchronously {
                                 progressText.text = progress.message
@@ -683,8 +704,14 @@ class MainView : VerticalLayout() {
         }
     }
 
+    private fun defaultBatchName(datasetDirectoryName: String): String {
+        val datasetPath = Path.of(datasetDirectoryName)
+        return datasetPath.parent?.fileName?.toString().orEmpty().ifBlank { "Без партии" }
+    }
+
     private fun importProjectFromDataset(
         datasetDirectoryName: String,
+        batchName: String,
         cancelRequested: AtomicBoolean = AtomicBoolean(false),
         onProgress: (ImportProgress) -> Unit = {}
     ): DatasetProject {
@@ -770,9 +797,11 @@ class MainView : VerticalLayout() {
             )
         }
 
+        val projectName = Path.of(datasetDirectoryName).fileName?.toString().orEmpty().ifBlank { datasetDirectoryName }
         return DatasetProject(
             id = "dataset-$datasetDirectoryName",
-            name = datasetDirectoryName,
+            name = projectName,
+            batch = batchName.ifBlank { "Без партии" },
             type = "Импорт из /siams/images",
             source = datasetPath.toString(),
             previewUrl = projectPreview.toString(),
@@ -1546,6 +1575,7 @@ class MainView : VerticalLayout() {
 private data class DatasetProject(
     val id: String,
     val name: String,
+    val batch: String,
     val type: String,
     val source: String,
     val previewUrl: String,
