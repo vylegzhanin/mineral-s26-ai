@@ -29,6 +29,7 @@ import com.vaadin.flow.component.icon.VaadinIcon
 import com.vaadin.flow.server.StreamResource
 import com.vaadin.flow.router.Route
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.mvysny.kaributools.addIconItem
 import org.slf4j.LoggerFactory
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
@@ -354,7 +355,7 @@ class MainView : VerticalLayout() {
 
     private fun filterAddMenu(): MenuBar =
         MenuBar().apply {
-            val root = addItem(VaadinIcon.FILTER.create())
+            val root = addIconItem(VaadinIcon.FILTER.create())
             root.subMenu.addItem("Grain class") { addFilter(ObjectFilter.GRAIN_CLASS) }.also {
                 filterMenuItems[ObjectFilter.GRAIN_CLASS] = it
             }
@@ -381,13 +382,19 @@ class MainView : VerticalLayout() {
 
     private fun rebuildCardFieldsMenu(menuBar: MenuBar) {
         menuBar.removeAll()
-        val root = menuBar.addItem(VaadinIcon.EYE.create())
+        val root = menuBar.addIconItem(VaadinIcon.EYE.create())
         root.element.setProperty("title", "Показывать на карточке")
         val subMenu = root.subMenu
         styleToolbarMenu(menuBar, root)
 
-        subMenu.addItem(showMasksCheckbox)
-        subMenu.addItem("────────").apply { isEnabled = false }
+        subMenu.addItem("Маски") {
+            showMasksCheckbox.value = !showMasksCheckbox.value
+            rebuildCardFieldsMenu(menuBar)
+        }.apply {
+            isCheckable = true
+            isChecked = showMasksCheckbox.value
+        }
+        subMenu.addSeparator()
 
         syncCardFieldOrder(availableCardFieldsForPanel())
         reorderCardFieldOrderBySelection()
@@ -396,10 +403,13 @@ class MainView : VerticalLayout() {
         val unselectedFields = cardFieldOrder.filterNot { it in cardVisibleFields }
 
         selectedFields.forEach { field ->
-            subMenu.addItem("☑ ${prettyLabel(field)}") {
+            subMenu.addItem(prettyLabel(field)) {
                 cardVisibleFields.remove(field)
                 refreshObjectGallery(resetPaging = false)
                 rebuildCardFieldsMenu(menuBar)
+            }.apply {
+                isCheckable = true
+                isChecked = true
             }
         }
 
