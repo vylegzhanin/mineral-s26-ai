@@ -608,6 +608,7 @@ class MainView : VerticalLayout() {
             cancelRequested.set(false)
             importButton.isEnabled = false
             datasetSelector.isEnabled = false
+            batchField.isEnabled = false
             progressText.isVisible = true
             progressBar.isVisible = true
             progressText.text = "Подготовка импорта…"
@@ -635,6 +636,7 @@ class MainView : VerticalLayout() {
                     importInProgress = false
                     importButton.isEnabled = true
                     datasetSelector.isEnabled = true
+                    batchField.isEnabled = true
                     stopButton.isVisible = false
                     stopButton.isEnabled = true
 
@@ -821,6 +823,7 @@ class MainView : VerticalLayout() {
             name = projectName,
             batch = batchName.ifBlank { "Без партии" },
             type = "Импорт из /siams/images",
+            imageCount = commonSuffixes.size,
             source = datasetPath.toString(),
             previewUrl = projectPreview.toString(),
             objects = objectsForUi
@@ -1170,7 +1173,7 @@ class MainView : VerticalLayout() {
             style["font-weight"] = "600"
             style["display"] = "block"
         }
-        val meta = Span("${project.type} • ${project.objects.size} объектов").apply {
+        val meta = Span("Изображений: ${project.imageCount} • Объектов: ${project.objects.size}").apply {
             style["color"] = "var(--lumo-secondary-text-color)"
             style["font-size"] = "var(--lumo-font-size-s)"
             style["display"] = "block"
@@ -1634,6 +1637,7 @@ private data class DatasetProject(
     val name: String,
     val batch: String,
     val type: String,
+    val imageCount: Int,
     val source: String,
     val previewUrl: String,
     val objects: List<DatasetObject>
