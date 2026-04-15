@@ -32,6 +32,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
 import java.util.ArrayDeque
+import java.util.Locale
 import java.security.MessageDigest
 import java.util.stream.Collectors
 import java.util.concurrent.CancellationException
@@ -46,6 +47,7 @@ import javax.imageio.ImageIO
 class MainView : VerticalLayout() {
     companion object {
         private const val OBJECT_PAGE_SIZE = 200
+        private const val MULTIPHASE_CLASS_NAME = "Многофазный"
         private val log = LoggerFactory.getLogger(MainView::class.java)
     }
 
@@ -106,6 +108,12 @@ class MainView : VerticalLayout() {
         setItems("Да", "Нет")
         isClearButtonVisible = true
         setWidth("110px")
+    }
+    private val showMasksCheckbox = Checkbox("Маски").apply {
+        value = false
+        addValueChangeListener {
+            refreshObjectGallery(resetPaging = false)
+        }
     }
     private val selectedObjectTitle = H4("Выберите объект")
     private val propertyEditor = com.vaadin.flow.component.html.Div()
@@ -264,6 +272,7 @@ class MainView : VerticalLayout() {
             HorizontalLayout(
                 filterAddMenu(),
                 filterControls,
+                showMasksCheckbox,
                 Button("Сброс") {
                     clearFilters()
                     refreshObjectGallery(resetPaging = true)
@@ -399,6 +408,9 @@ class MainView : VerticalLayout() {
         grainClassFilter.addValueChangeListener {
             val selectedGrainClass = it.value?.trim().orEmpty()
             applyColorIconToCombo(grainClassFilter, grainClassColorMapForCurrentDataset()[selectedGrainClass])
+            if (selectedGrainClass == MULTIPHASE_CLASS_NAME) {
+                showMasksCheckbox.value = true
+            }
             refreshObjectGallery(resetPaging = true)
         }
         statusFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
@@ -745,12 +757,16 @@ class MainView : VerticalLayout() {
         onProgress(ImportProgress("Подготовка проекта…", 1, 1, false))
         val projectPreview = rawBySuffix[commonSuffixes.first()] ?: rgbMasks.first()
         val objectsForUi = resolvedObjects.map { cached ->
+            val properties = cached.properties.toMutableMap()
+            cached.properties["mask_crop_file"]?.let { maskFile ->
+                properties["mask_crop_url"] = cacheDir.resolve(maskFile).toString()
+            }
             DatasetObject(
                 id = cached.id,
                 name = cached.name,
                 category = cached.category,
                 previewUrl = cacheDir.resolve(cached.previewFileName).toString(),
-                properties = cached.properties.toMutableMap()
+                properties = properties
             )
         }
 
@@ -767,7 +783,12 @@ class MainView : VerticalLayout() {
     private fun resolveProjectResources(project: DatasetProject): DatasetProject {
         val resolvedPreview = resolvePreviewUrl(project.previewUrl)
         val resolvedObjects = project.objects.map { obj ->
-            obj.copy(previewUrl = resolvePreviewUrl(obj.previewUrl))
+            val resolvedProperties = obj.properties.toMutableMap()
+            obj.properties["mask_crop_url"]?.let { resolvedProperties["mask_crop_url"] = resolvePreviewUrl(it) }
+            obj.copy(
+                previewUrl = resolvePreviewUrl(obj.previewUrl),
+                properties = resolvedProperties
+            )
         }
         return project.copy(previewUrl = resolvedPreview, objects = resolvedObjects)
     }
@@ -813,18 +834,22 @@ class MainView : VerticalLayout() {
                 val linearIndex = y * width + x
                 if (visited[linearIndex]) continue
 
-                val component = collectConnectedComponent(mask, x, y, color, visited)
+                val component = collectConnectedComponent(mask, x, y, visited)
                 if (component.points.isEmpty()) continue
 
                 grainCounter += 1
-                val grainClass = legend[color] ?: "Unknown(0x${color.toString(16).padStart(6, '0').uppercase()})"
+                val phaseStatistics = collectPhaseStatistics(mask, component.points)
+                val objectClassInfo = resolveObjectClassInfo(phaseStatistics, legend)
                 val previewFileName = "grain-$suffix-$grainCounter.png"
                 val previewPath = cacheDir.resolve(previewFileName)
                 Files.write(previewPath, buildMaskedCrop(source, component))
+                val maskPreviewFileName = "grain-mask-$suffix-$grainCounter.png"
+                val maskPreviewPath = cacheDir.resolve(maskPreviewFileName)
+                Files.write(maskPreviewPath, buildMaskedCrop(mask, component))
 
                 objects += CachedDatasetObject(
                     id = "$datasetDirectoryName-$suffix-$grainCounter",
-                    name = grainClass,
+                    name = objectClassInfo.grainClass,
                     category = "OreGrain",
                     previewFileName = previewFileName,
                     properties = mapOf(
@@ -832,8 +857,12 @@ class MainView : VerticalLayout() {
                         "grain_id" to "$suffix-$grainCounter",
                         "source_image_file" to sourceImagePath.fileName.toString(),
                         "mask_rgb_file" to maskImagePath.fileName.toString(),
-                        "grain_class" to grainClass,
-                        "mask_color_rgb" to "0x${color.toString(16).padStart(6, '0').uppercase()}",
+                        "grain_class" to objectClassInfo.grainClass,
+                        "mask_color_rgb" to objectClassInfo.classColorHex,
+                        "object_phase_type" to objectClassInfo.phaseType,
+                        "phase_count" to phaseStatistics.size.toString(),
+                        "phase_area_shares" to formatPhaseAreaShares(phaseStatistics, legend),
+                        "mask_crop_file" to maskPreviewFileName,
                         "crop_width" to (component.maxX - component.minX + 1).toString(),
                         "crop_height" to (component.maxY - component.minY + 1).toString()
                     )
@@ -848,7 +877,6 @@ class MainView : VerticalLayout() {
         mask: BufferedImage,
         startX: Int,
         startY: Int,
-        componentColor: Int,
         visited: BooleanArray
     ): ConnectedComponent {
         val width = mask.width
@@ -865,7 +893,7 @@ class MainView : VerticalLayout() {
             if (x < 0 || y < 0 || x >= width || y >= height) return
             val idx = y * width + x
             if (visited[idx]) return
-            if (mask.rgbNoAlpha(x, y) != componentColor) return
+            if (mask.rgbNoAlpha(x, y) == 0x000000) return
             visited[idx] = true
             queue.addLast(Point(x, y))
         }
@@ -890,6 +918,55 @@ class MainView : VerticalLayout() {
 
         return ConnectedComponent(points, minX, minY, maxX, maxY)
     }
+
+    private fun collectPhaseStatistics(
+        mask: BufferedImage,
+        points: List<Point>
+    ): Map<Int, Int> {
+        val stats = linkedMapOf<Int, Int>()
+        points.forEach { point ->
+            val color = mask.rgbNoAlpha(point.x, point.y)
+            if (color == 0x000000) return@forEach
+            stats[color] = (stats[color] ?: 0) + 1
+        }
+        return stats
+    }
+
+    private fun resolveObjectClassInfo(
+        phaseStatistics: Map<Int, Int>,
+        legend: Map<Int, String>
+    ): ObjectClassInfo {
+        if (phaseStatistics.size == 1) {
+            val onlyColor = phaseStatistics.keys.first()
+            val grainClass = legend[onlyColor] ?: "Unknown(0x${onlyColor.toString(16).padStart(6, '0').uppercase()})"
+            return ObjectClassInfo(
+                grainClass = grainClass,
+                classColorHex = toHexColor(onlyColor),
+                phaseType = "single_phase"
+            )
+        }
+
+        return ObjectClassInfo(
+            grainClass = "Многофазный",
+            classColorHex = "0xAAAAAA",
+            phaseType = "multi_phase"
+        )
+    }
+
+    private fun formatPhaseAreaShares(
+        phaseStatistics: Map<Int, Int>,
+        legend: Map<Int, String>
+    ): String {
+        val total = phaseStatistics.values.sum().takeIf { it > 0 } ?: return "{}"
+        val sorted = phaseStatistics.entries.sortedByDescending { it.value }
+        return sorted.joinToString(prefix = "{", postfix = "}") { (color, area) ->
+            val phaseName = legend[color] ?: "Unknown(${toHexColor(color)})"
+            val share = area.toDouble() / total.toDouble()
+            "\"$phaseName\":${"%.6f".format(Locale.US, share)}"
+        }
+    }
+
+    private fun toHexColor(color: Int): String = "0x${color.toString(16).padStart(6, '0').uppercase()}"
 
     private fun buildMaskedCrop(source: BufferedImage, component: ConnectedComponent): ByteArray {
         val cropWidth = component.maxX - component.minX + 1
@@ -1049,6 +1126,29 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "10px"
             style["image-rendering"] = "pixelated"
         }
+        val imageStack = com.vaadin.flow.component.html.Div(image).apply {
+            style["position"] = "relative"
+            style["width"] = "${imageDisplayWidth}px"
+            style["height"] = "${imageDisplayHeight}px"
+            style["display"] = "flex"
+            style["align-items"] = "center"
+            style["justify-content"] = "center"
+        }
+
+        if (shouldShowMaskOverlay(obj)) {
+            val maskOverlay = Image(obj.properties["mask_crop_url"], "${obj.name} mask").apply {
+                style["position"] = "absolute"
+                style["left"] = "0"
+                style["top"] = "0"
+                style["width"] = "${imageDisplayWidth}px"
+                style["height"] = "${imageDisplayHeight}px"
+                style["object-fit"] = "contain"
+                style["opacity"] = "0.42"
+                style["image-rendering"] = "pixelated"
+                style["pointer-events"] = "none"
+            }
+            imageStack.add(maskOverlay)
+        }
 
         val cardTitle = Span(obj.properties["grain_class"] ?: obj.name).apply {
             style["font-weight"] = "600"
@@ -1057,7 +1157,7 @@ class MainView : VerticalLayout() {
             style["line-height"] = "1.25"
         }
 
-        val overlay = com.vaadin.flow.component.html.Div(cardTitle).apply {
+        val titleOverlay = com.vaadin.flow.component.html.Div(cardTitle).apply {
             style["position"] = "absolute"
             style["left"] = "0"
             style["right"] = "0"
@@ -1067,7 +1167,7 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "10px 10px 0 0"
         }
 
-        return com.vaadin.flow.component.html.Div(image, overlay).apply {
+        return com.vaadin.flow.component.html.Div(imageStack, titleOverlay).apply {
             style["position"] = "relative"
             style["display"] = "inline-block"
             style["flex"] = "1 0 ${cardWidth}px"
@@ -1084,6 +1184,12 @@ class MainView : VerticalLayout() {
             styleObjectSelection(selected, style)
             addClickListener { onClick() }
         }
+    }
+
+    private fun shouldShowMaskOverlay(obj: DatasetObject): Boolean {
+        if (!showMasksCheckbox.value) return false
+        val hasMaskUrl = !obj.properties["mask_crop_url"].isNullOrBlank()
+        return hasMaskUrl
     }
 
     private fun styleSelection(selected: Boolean, style: Style) {
@@ -1172,16 +1278,21 @@ class MainView : VerticalLayout() {
         }
 
     private fun grainClassEditor(value: String, obj: DatasetObject): ComboBox<String> {
+        val isMultiphaseObject = obj.properties["object_phase_type"] == "multi_phase" || value.trim() == MULTIPHASE_CLASS_NAME
         val colorByGrainClass = grainClassColorMapForCurrentDataset()
         val editor = ComboBox<String>().apply {
-            setItems(grainClassOptionsForCurrentDataset(value))
-            isAllowCustomValue = true
+            setItems(
+                if (isMultiphaseObject) listOf(MULTIPHASE_CLASS_NAME)
+                else grainClassOptionsForCurrentDataset(value)
+            )
+            isAllowCustomValue = !isMultiphaseObject
             this.value = value
             setWidthFull()
             setItemLabelGenerator { it }
             setRenderer(ComponentRenderer { grainClass ->
                 grainClassOptionView(grainClass, colorByGrainClass[grainClass])
             })
+            isReadOnly = isMultiphaseObject
         }
 
         fun applyLinkedColor(selectedGrainClass: String) {
@@ -1212,10 +1323,12 @@ class MainView : VerticalLayout() {
         }
 
         applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
-        editor.addValueChangeListener { applyLinkedColor(it.value ?: "") }
-        editor.addCustomValueSetListener {
-            editor.value = it.detail
-            applyLinkedColor(it.detail)
+        if (!isMultiphaseObject) {
+            editor.addValueChangeListener { applyLinkedColor(it.value ?: "") }
+            editor.addCustomValueSetListener {
+                editor.value = it.detail
+                applyLinkedColor(it.detail)
+            }
         }
         return editor
     }
@@ -1224,13 +1337,14 @@ class MainView : VerticalLayout() {
         val datasetOptions = selectedProject
             ?.objects
             ?.mapNotNull { it.properties["grain_class"]?.trim() }
-            ?.filter { it.isNotBlank() }
+            ?.filter { it.isNotBlank() && it != MULTIPHASE_CLASS_NAME }
             ?.distinct()
             ?.sorted()
             .orEmpty()
 
         return (datasetOptions + currentValue.trim())
             .filter { it.isNotBlank() }
+            .filter { it == currentValue.trim() || it != MULTIPHASE_CLASS_NAME }
             .distinct()
     }
 
@@ -1465,6 +1579,12 @@ private data class CachedDatasetObject(
     val category: String,
     val previewFileName: String,
     val properties: Map<String, String>
+)
+
+private data class ObjectClassInfo(
+    val grainClass: String,
+    val classColorHex: String,
+    val phaseType: String
 )
 
 private data class ImportProgress(
