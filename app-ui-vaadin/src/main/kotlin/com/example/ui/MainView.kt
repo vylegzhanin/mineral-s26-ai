@@ -1263,8 +1263,8 @@ class MainView : VerticalLayout() {
             style["-webkit-text-stroke"] = if (isPrimary) "0.45px rgba(0,0,0,0.92)" else "0.4px rgba(0,0,0,0.95)"
         }
 
-        cardFieldsForOverlay(obj).forEachIndexed { index, (_, fieldValue) ->
-            titleOverlay.add(overlayText(fieldValue, if (index == 0) titleColor else "white", isPrimary = index == 0))
+        overlayLinesForCard(obj, titleColor).forEach { line ->
+            titleOverlay.add(overlayText(line.text, line.color, isPrimary = line.isPrimary))
         }
 
         return com.vaadin.flow.component.html.Div(imageStack, titleOverlay).apply {
@@ -1292,15 +1292,50 @@ class MainView : VerticalLayout() {
         return hasMaskUrl
     }
 
-    private fun cardFieldsForOverlay(obj: DatasetObject): List<Pair<String, String>> =
+    private fun overlayLinesForCard(obj: DatasetObject, grainClassColor: String): List<OverlayLine> =
         cardVisibleFields
             .asSequence()
-            .mapNotNull { field ->
-                val value = obj.properties[field]?.trim().orEmpty()
-                if (value.isBlank()) null else field to value
+            .sortedBy { field -> if (field == "grain_class") 0 else 1 }
+            .flatMap { field ->
+                if (field == "phase_area_shares") {
+                    val rawJson = obj.properties[field].orEmpty()
+                    phaseAreaShareOverlayLines(rawJson).asSequence()
+                } else {
+                    val value = obj.properties[field]?.trim().orEmpty()
+                    if (value.isBlank()) {
+                        emptySequence()
+                    } else {
+                        sequenceOf(
+                            OverlayLine(
+                                text = value,
+                                color = if (field == "grain_class") grainClassColor else "white",
+                                isPrimary = field == "grain_class"
+                            )
+                        )
+                    }
+                }
             }
-            .sortedBy { (field, _) -> if (field == "grain_class") 0 else 1 }
             .toList()
+
+    private fun phaseAreaShareOverlayLines(rawJson: String): List<OverlayLine> {
+        if (rawJson.isBlank()) return emptyList()
+        val root = runCatching { ObjectMapper().readTree(rawJson) }.getOrNull() ?: return emptyList()
+        if (!root.isObject) return emptyList()
+        val colorsByPhase = grainClassColorMapForCurrentDataset()
+
+        return root.fields().asSequence()
+            .mapNotNull { (phaseName, rawValueNode) ->
+                val value = rawValueNode.asDouble(Double.NaN)
+                if (value.isNaN()) return@mapNotNull null
+                val rounded = String.format(Locale.US, "%.1f", value)
+                val phaseColor = colorsByPhase[phaseName]
+                    ?.let { normalizeMaskColor(it) }
+                    ?.let { "#" + it.removePrefix("0x") }
+                    ?: "white"
+                OverlayLine(text = "$phaseName: $rounded", color = phaseColor, isPrimary = false)
+            }
+            .toList()
+    }
 
     private fun styleSelection(selected: Boolean, style: Style) {
         if (selected) {
@@ -1656,11 +1691,17 @@ class MainView : VerticalLayout() {
             setWidthFull()
             isPadding = false
             isSpacing = true
-            setAlignItems(FlexComponent.Alignment.END)
+            setAlignItems(FlexComponent.Alignment.BASELINE)
             setFlexGrow(1.0, editor)
             style["gap"] = "6px"
         }
     }
+
+    private data class OverlayLine(
+        val text: String,
+        val color: String,
+        val isPrimary: Boolean
+    )
 
     private fun propertySection(title: String, content: Component): Component =
         com.vaadin.flow.component.html.Div(
