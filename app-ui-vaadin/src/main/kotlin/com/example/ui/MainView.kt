@@ -1347,18 +1347,18 @@ class MainView : VerticalLayout() {
             style["pointer-events"] = "none"
         }
 
-        fun overlayText(value: String, color: String, isPrimary: Boolean): Span = Span(value).apply {
-            style["font-weight"] = if (isPrimary) "700" else "600"
+        fun overlayText(value: String, color: String): Span = Span(value).apply {
+            style["font-weight"] = "600"
             style["display"] = "block"
             style["color"] = color
-            style["line-height"] = if (isPrimary) "1.25" else "1.2"
-            style["font-size"] = if (isPrimary) "var(--lumo-font-size-s)" else "var(--lumo-font-size-xs)"
+            style["line-height"] = "1.2"
+            style["font-size"] = "var(--lumo-font-size-xs)"
             style["text-shadow"] = "0 0 2px rgba(0,0,0,0.98), 0 0 4px rgba(0,0,0,0.9), 1px 1px 0 rgba(0,0,0,0.95), -1px -1px 0 rgba(0,0,0,0.95)"
-            style["-webkit-text-stroke"] = if (isPrimary) "0.45px rgba(0,0,0,0.92)" else "0.4px rgba(0,0,0,0.95)"
+            style["-webkit-text-stroke"] = "0.4px rgba(0,0,0,0.95)"
         }
 
         overlayLinesForCard(obj, titleColor).forEach { line ->
-            titleOverlay.add(overlayText(line.text, line.color, isPrimary = line.isPrimary))
+            titleOverlay.add(overlayText(line.text, line.color))
         }
 
         return com.vaadin.flow.component.html.Div(imageStack, titleOverlay).apply {
@@ -1401,8 +1401,7 @@ class MainView : VerticalLayout() {
                         sequenceOf(
                             OverlayLine(
                                 text = value,
-                                color = if (field == "grain_class") grainClassColor else "white",
-                                isPrimary = field == "grain_class"
+                                color = if (field == "grain_class") grainClassColor else "white"
                             )
                         )
                     }
@@ -1428,8 +1427,7 @@ class MainView : VerticalLayout() {
                     ?: "white"
                 OverlayLine(
                     text = if (isSinglePhaseObject) phaseName else "$phaseName: $rounded",
-                    color = phaseColor,
-                    isPrimary = false
+                    color = phaseColor
                 )
             }
             .toList()
@@ -1882,8 +1880,7 @@ class MainView : VerticalLayout() {
 
     private data class OverlayLine(
         val text: String,
-        val color: String,
-        val isPrimary: Boolean
+        val color: String
     )
 
     private fun propertySection(title: String, content: Component): Component =
