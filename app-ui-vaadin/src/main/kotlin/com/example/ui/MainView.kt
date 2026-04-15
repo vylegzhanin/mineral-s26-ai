@@ -123,7 +123,7 @@ class MainView : VerticalLayout() {
     private val selectedObjectTitle = H4("Выберите объект")
     private val propertyEditor = com.vaadin.flow.component.html.Div()
     private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
-    private val cardVisibleFields = linkedSetOf<String>()
+    private val cardVisibleFields = linkedSetOf("grain_class")
     private var selectedObjectCard: com.vaadin.flow.component.html.Div? = null
     private var visibleObjectLimit: Int = OBJECT_PAGE_SIZE
 
@@ -1253,28 +1253,18 @@ class MainView : VerticalLayout() {
             style["pointer-events"] = "none"
         }
 
-        val cardPrimaryText = Span(obj.properties["grain_class"] ?: obj.name).apply {
-            style["font-weight"] = "700"
+        fun overlayText(value: String, color: String, isPrimary: Boolean): Span = Span(value).apply {
+            style["font-weight"] = if (isPrimary) "700" else "600"
             style["display"] = "block"
-            style["color"] = titleColor
-            style["line-height"] = "1.25"
-            style["font-size"] = "var(--lumo-font-size-s)"
-            style["text-shadow"] = "0 0 2px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.85), 1px 1px 0 rgba(0,0,0,0.9), -1px -1px 0 rgba(0,0,0,0.9)"
-            style["-webkit-text-stroke"] = "0.45px rgba(0,0,0,0.92)"
+            style["color"] = color
+            style["line-height"] = if (isPrimary) "1.25" else "1.2"
+            style["font-size"] = if (isPrimary) "var(--lumo-font-size-s)" else "var(--lumo-font-size-xs)"
+            style["text-shadow"] = "0 0 2px rgba(0,0,0,0.98), 0 0 4px rgba(0,0,0,0.9), 1px 1px 0 rgba(0,0,0,0.95), -1px -1px 0 rgba(0,0,0,0.95)"
+            style["-webkit-text-stroke"] = if (isPrimary) "0.45px rgba(0,0,0,0.92)" else "0.4px rgba(0,0,0,0.95)"
         }
-        titleOverlay.add(cardPrimaryText)
 
-        cardFieldsForOverlay(obj).forEach { (fieldName, fieldValue) ->
-            val additionalField = Span("${prettyLabel(fieldName)}: $fieldValue").apply {
-                style["display"] = "block"
-                style["font-size"] = "var(--lumo-font-size-xs)"
-                style["font-weight"] = "600"
-                style["line-height"] = "1.2"
-                style["color"] = "white"
-                style["text-shadow"] = "0 0 2px rgba(0,0,0,0.98), 0 0 4px rgba(0,0,0,0.9), 1px 1px 0 rgba(0,0,0,0.95), -1px -1px 0 rgba(0,0,0,0.95)"
-                style["-webkit-text-stroke"] = "0.4px rgba(0,0,0,0.95)"
-            }
-            titleOverlay.add(additionalField)
+        cardFieldsForOverlay(obj).forEachIndexed { index, (_, fieldValue) ->
+            titleOverlay.add(overlayText(fieldValue, if (index == 0) titleColor else "white", isPrimary = index == 0))
         }
 
         return com.vaadin.flow.component.html.Div(imageStack, titleOverlay).apply {
@@ -1307,8 +1297,9 @@ class MainView : VerticalLayout() {
             .asSequence()
             .mapNotNull { field ->
                 val value = obj.properties[field]?.trim().orEmpty()
-                if (value.isBlank() || field == "grain_class") null else field to value
+                if (value.isBlank()) null else field to value
             }
+            .sortedBy { (field, _) -> if (field == "grain_class") 0 else 1 }
             .toList()
 
     private fun styleSelection(selected: Boolean, style: Style) {
@@ -1370,7 +1361,7 @@ class MainView : VerticalLayout() {
                 val withVisibilityToggle = withCardVisibilityToggle(
                     fieldName = name,
                     editor = editor,
-                    defaultVisible = false
+                    defaultVisible = name == "grain_class"
                 )
                 form.addFormItem(withVisibilityToggle, prettyLabel(name))
             }
@@ -1583,7 +1574,7 @@ class MainView : VerticalLayout() {
         }
 
     private fun refreshCardsIfOverlayDependsOn(fieldName: String) {
-        if (fieldName == "grain_class" || fieldName in cardVisibleFields) {
+        if (fieldName in cardVisibleFields) {
             refreshObjectGallery(resetPaging = false)
         }
     }
@@ -1635,6 +1626,11 @@ class MainView : VerticalLayout() {
             }
         }
 
+        obj.properties.putIfAbsent("meta_status", status.value ?: "Черновик")
+        obj.properties.putIfAbsent("meta_confidence", ((confidence.value ?: 85.0).toInt()).toString())
+        obj.properties.putIfAbsent("meta_analysis_date", analysisDate.value?.toString().orEmpty())
+        obj.properties.putIfAbsent("meta_reviewed", reviewed.value.toString())
+
         form.add(
             withCardVisibilityToggle("meta_status", status, defaultVisible = false),
             withCardVisibilityToggle("meta_confidence", confidence, defaultVisible = false),
@@ -1645,16 +1641,16 @@ class MainView : VerticalLayout() {
     }
 
     private fun withCardVisibilityToggle(fieldName: String, editor: Component, defaultVisible: Boolean): Component {
-        if (fieldName == "grain_class") return editor
         if (defaultVisible) {
             cardVisibleFields.add(fieldName)
         }
-        val toggle = Checkbox("На карточке").apply {
+        val toggle = Checkbox().apply {
             value = fieldName in cardVisibleFields
             addValueChangeListener {
                 if (it.value) cardVisibleFields.add(fieldName) else cardVisibleFields.remove(fieldName)
                 refreshObjectGallery(resetPaging = false)
             }
+            element.setProperty("title", "Показывать на карточке")
         }
         return HorizontalLayout(editor, toggle).apply {
             setWidthFull()
@@ -1662,7 +1658,7 @@ class MainView : VerticalLayout() {
             isSpacing = true
             setAlignItems(FlexComponent.Alignment.END)
             setFlexGrow(1.0, editor)
-            style["gap"] = "8px"
+            style["gap"] = "6px"
         }
     }
 
