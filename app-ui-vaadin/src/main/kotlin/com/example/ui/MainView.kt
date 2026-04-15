@@ -427,19 +427,6 @@ class MainView : VerticalLayout() {
         syncCardFieldOrder(availableCardFieldsForPanel())
         reorderCardFieldOrderBySelection()
 
-        val selectedFields = cardFieldOrder.filter { it in cardVisibleFields }
-
-        selectedFields.forEach { field ->
-            subMenu.addItem(prettyLabel(field)) {
-                cardVisibleFields.remove(field)
-                refreshObjectGallery(resetPaging = false)
-                rebuildCardFieldsMenu(menuBar)
-            }.apply {
-                isCheckable = true
-                isChecked = true
-            }
-        }
-
         val addFieldItem = subMenu.addItem("Поля")
         cardFieldOrder.forEach { field ->
             addFieldItem.subMenu.addItem(prettyLabel(field)) {
