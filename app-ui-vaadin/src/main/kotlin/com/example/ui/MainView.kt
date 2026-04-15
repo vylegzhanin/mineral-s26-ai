@@ -120,13 +120,7 @@ class MainView : VerticalLayout() {
         isClearButtonVisible = true
         setWidth("110px")
     }
-    private val showMasksCheckbox = Checkbox("Маски").apply {
-        value = false
-        addValueChangeListener {
-            refreshObjectGallery(resetPaging = false)
-            rebuildCardFieldsMenu(cardFieldsMenuBar)
-        }
-    }
+    private var showMasksOnCards: Boolean = false
     private val propertyEditor = com.vaadin.flow.component.html.Div()
     private val cardFieldsPanelTitle = H4("Поля карточек")
     private val cardFieldsMenuBar = MenuBar()
@@ -421,11 +415,12 @@ class MainView : VerticalLayout() {
         styleToolbarMenu(menuBar, root)
 
         subMenu.addItem("Маски") {
-            showMasksCheckbox.value = !showMasksCheckbox.value
+            showMasksOnCards = !showMasksOnCards
+            refreshObjectGallery(resetPaging = false)
             rebuildCardFieldsMenu(menuBar)
         }.apply {
             isCheckable = true
-            isChecked = showMasksCheckbox.value
+            isChecked = showMasksOnCards
         }
         subMenu.addSeparator()
 
@@ -555,7 +550,8 @@ class MainView : VerticalLayout() {
             val selectedGrainClass = it.value?.trim().orEmpty()
             applyColorIconToCombo(grainClassFilter, grainClassColorMapForCurrentDataset()[selectedGrainClass])
             if (selectedGrainClass == MULTIPHASE_CLASS_NAME) {
-                showMasksCheckbox.value = true
+                showMasksOnCards = true
+                rebuildCardFieldsMenu(cardFieldsMenuBar)
             }
             refreshObjectGallery(resetPaging = true)
         }
@@ -1416,7 +1412,7 @@ class MainView : VerticalLayout() {
     }
 
     private fun shouldShowMaskOverlay(obj: DatasetObject): Boolean {
-        if (!showMasksCheckbox.value) return false
+        if (!showMasksOnCards) return false
         val hasMaskUrl = !obj.properties["mask_crop_url"].isNullOrBlank()
         return hasMaskUrl
     }
