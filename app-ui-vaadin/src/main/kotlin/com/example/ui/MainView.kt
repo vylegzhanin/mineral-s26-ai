@@ -7,6 +7,9 @@ import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.component.datepicker.DatePicker
 import com.vaadin.flow.component.contextmenu.MenuItem
 import com.vaadin.flow.component.dialog.Dialog
+import com.vaadin.flow.component.dnd.DragSource
+import com.vaadin.flow.component.dnd.DropEffect
+import com.vaadin.flow.component.dnd.DropTarget
 import com.vaadin.flow.component.formlayout.FormLayout
 import com.vaadin.flow.component.html.*
 import com.vaadin.flow.component.menubar.MenuBar
@@ -127,6 +130,7 @@ class MainView : VerticalLayout() {
     private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
     private val cardVisibleFields = linkedSetOf("phase_area_shares")
     private val cardFieldOrder = mutableListOf<String>()
+    private var draggedCardField: String? = null
     private var selectedObjectCard: com.vaadin.flow.component.html.Div? = null
     private var visibleObjectLimit: Int = OBJECT_PAGE_SIZE
 
@@ -1699,60 +1703,77 @@ class MainView : VerticalLayout() {
     private fun buildCardFieldsPanel(): Component {
         val fields = availableCardFieldsForPanel()
         syncCardFieldOrder(fields)
+        reorderCardFieldOrderBySelection()
         val list = VerticalLayout().apply {
             isPadding = false
             isSpacing = true
             setWidthFull()
         }
-        cardFieldOrder.forEachIndexed { index, field ->
+        cardFieldOrder.forEach { field ->
             val toggle = Checkbox().apply {
                 value = field in cardVisibleFields
                 addValueChangeListener {
                     if (it.value) cardVisibleFields.add(field) else cardVisibleFields.remove(field)
+                    reorderCardFieldOrderBySelection()
+                    refreshCardFieldsPanelView()
                     refreshObjectGallery(resetPaging = false)
                 }
             }
-            val moveUp = Button("↑") {
-                if (index > 0) {
-                    cardFieldOrder.removeAt(index)
-                    cardFieldOrder.add(index - 1, field)
-                    updateRightPanel()
-                    refreshObjectGallery(resetPaging = false)
-                }
-            }.apply {
-                isEnabled = index > 0
+            val dragHandle = Span("⋮⋮").apply {
+                style["cursor"] = "grab"
+                style["user-select"] = "none"
+                style["color"] = "var(--lumo-secondary-text-color)"
+                style["font-size"] = "var(--lumo-font-size-s)"
+                element.setProperty("title", "Перетащите для изменения порядка")
             }
-            val moveDown = Button("↓") {
-                if (index < cardFieldOrder.lastIndex) {
-                    cardFieldOrder.removeAt(index)
-                    cardFieldOrder.add(index + 1, field)
-                    updateRightPanel()
-                    refreshObjectGallery(resetPaging = false)
-                }
-            }.apply {
-                isEnabled = index < cardFieldOrder.lastIndex
-            }
-            list.add(
-                HorizontalLayout(
-                    HorizontalLayout(toggle, Span(prettyLabel(field))).apply {
-                        isPadding = false
-                        isSpacing = true
-                        setAlignItems(FlexComponent.Alignment.BASELINE)
-                        style["gap"] = "8px"
-                    },
-                    HorizontalLayout(moveUp, moveDown).apply {
-                        isPadding = false
-                        isSpacing = true
-                        style["gap"] = "4px"
-                    }
-                ).apply {
-                    setWidthFull()
+
+            val row = HorizontalLayout(
+                HorizontalLayout(toggle, Span(prettyLabel(field))).apply {
                     isPadding = false
                     isSpacing = true
-                    setAlignItems(FlexComponent.Alignment.CENTER)
-                    style["justify-content"] = "space-between"
+                    setAlignItems(FlexComponent.Alignment.BASELINE)
+                    style["gap"] = "8px"
+                },
+                dragHandle
+            ).apply {
+                setWidthFull()
+                isPadding = false
+                isSpacing = true
+                setAlignItems(FlexComponent.Alignment.CENTER)
+                style["justify-content"] = "space-between"
+                style["padding"] = "2px 0"
+                style["border-radius"] = "6px"
+            }
+
+            DragSource.create(row).apply {
+                setDraggable(true)
+                addDragStartListener {
+                    draggedCardField = field
+                    row.style["background"] = "var(--lumo-contrast-10pct)"
                 }
-            )
+                addDragEndListener {
+                    draggedCardField = null
+                    row.style.remove("background")
+                }
+            }
+            DropTarget.create(row).apply {
+                setDropEffect(DropEffect.MOVE)
+                addDropListener {
+                    val dragged = draggedCardField ?: return@addDropListener
+                    if (dragged == field) return@addDropListener
+                    val fromIndex = cardFieldOrder.indexOf(dragged)
+                    val targetIndex = cardFieldOrder.indexOf(field)
+                    if (fromIndex == -1 || targetIndex == -1) return@addDropListener
+                    cardFieldOrder.removeAt(fromIndex)
+                    val insertIndex = if (fromIndex < targetIndex) targetIndex - 1 else targetIndex
+                    cardFieldOrder.add(insertIndex, dragged)
+                    reorderCardFieldOrderBySelection()
+                    refreshCardFieldsPanelView()
+                    refreshObjectGallery(resetPaging = false)
+                }
+            }
+
+            list.add(row)
         }
         return propertySection("Показывать на карточке", list).apply {
             element.style["width"] = "100%"
@@ -1781,6 +1802,19 @@ class MainView : VerticalLayout() {
                 cardFieldOrder.add(field)
             }
         }
+    }
+
+    private fun reorderCardFieldOrderBySelection() {
+        val selected = cardFieldOrder.filter { it in cardVisibleFields }
+        val unselected = cardFieldOrder.filterNot { it in cardVisibleFields }
+        cardFieldOrder.clear()
+        cardFieldOrder.addAll(selected + unselected)
+    }
+
+    private fun refreshCardFieldsPanelView() {
+        if (selectedObject != null) return
+        cardFieldsPanel.removeAll()
+        cardFieldsPanel.add(buildCardFieldsPanel())
     }
 
     private data class OverlayLine(
