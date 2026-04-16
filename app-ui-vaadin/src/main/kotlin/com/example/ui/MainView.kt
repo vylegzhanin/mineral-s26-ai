@@ -4,9 +4,9 @@ import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.checkbox.Checkbox
 import com.vaadin.flow.component.combobox.ComboBox
-import com.vaadin.flow.component.combobox.MultiSelectComboBox
 import com.vaadin.flow.component.datepicker.DatePicker
 import com.vaadin.flow.component.contextmenu.MenuItem
+import com.vaadin.flow.component.contextmenu.SubMenu
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.dnd.DragSource
 import com.vaadin.flow.component.dnd.DropEffect
@@ -80,13 +80,10 @@ class MainView : VerticalLayout() {
         style["flex-wrap"] = "wrap"
         style["justify-content"] = "flex-end"
     }
-    private val grainClassFilter = MultiSelectComboBox<String>().apply {
-        placeholder = "Grain class"
-        setWidth("300px")
-        style["min-width"] = "220px"
-        style["max-width"] = "420px"
-        setItemLabelGenerator { it }
-    }
+    private val grainClassFilterToolbarMenuBar = MenuBar()
+    private var availableGrainClassItems: List<String> = emptyList()
+    private var grainClassColorsByClass: Map<String, String> = emptyMap()
+    private val selectedGrainClasses = linkedSetOf<String>()
     private val statusFilter = ComboBox<String>().apply {
         placeholder = "Статус"
         isClearButtonVisible = true
@@ -327,6 +324,7 @@ class MainView : VerticalLayout() {
             HorizontalLayout(
                 cardFieldsMenu(),
                 filterAddMenu(),
+                grainClassToolbarMenu(),
                 filterControls,
                 Button(VaadinIcon.REFRESH.create()) {
                     clearFilters()
@@ -369,35 +367,41 @@ class MainView : VerticalLayout() {
             rebuildFilterAddMenu()
         }
 
+    private fun grainClassToolbarMenu(): MenuBar =
+        grainClassFilterToolbarMenuBar.apply {
+            rebuildGrainClassToolbarMenu()
+        }
+
+    private fun rebuildGrainClassToolbarMenu() {
+        grainClassFilterToolbarMenuBar.removeAll()
+        val selected = selectedGrainClasses.toList().sorted()
+        val rootContent = HorizontalLayout().apply {
+            isPadding = false
+            isSpacing = true
+            setAlignItems(FlexComponent.Alignment.CENTER)
+            style["gap"] = "4px"
+            style["padding"] = "0"
+            style["margin"] = "0"
+            add(VaadinIcon.PALETTE.create().apply { style["width"] = "14px"; style["height"] = "14px" })
+            if (selected.isEmpty()) {
+                add(Span("классы").apply { style["font-size"] = "var(--lumo-font-size-s)" })
+            } else {
+                selected.forEach { grainClass -> add(colorDot(grainClassColorsByClass[grainClass])) }
+            }
+        }
+        val root = grainClassFilterToolbarMenuBar.addItem(rootContent)
+        root.element.setProperty("title", "Фильтр по классам")
+        populateGrainClassMenu(root.subMenu)
+        styleToolbarMenu(grainClassFilterToolbarMenuBar, root)
+    }
+
     private fun rebuildFilterAddMenu() {
         filterAddMenuBar.removeAll()
         filterMenuItems.clear()
 
         val root = filterAddMenuBar.addIconItem(VaadinIcon.FILTER.create())
-        val selectedGrainClasses = grainClassFilter.selectedItems.map { it.trim() }.filter { it.isNotBlank() }.toSet()
-        val grainClassColors = grainClassColorMapForCurrentDataset()
         val grainClassRoot = root.subMenu.addItem("Grain class")
-        val grainClasses = selectedProject
-            ?.objects
-            ?.mapNotNull { it.properties["grain_class"]?.trim() }
-            ?.filter { it.isNotBlank() }
-            ?.distinct()
-            ?.sorted()
-            .orEmpty()
-
-        if (grainClasses.isEmpty()) {
-            grainClassRoot.subMenu.addItem("Нет классов").apply { isEnabled = false }
-        } else {
-            grainClasses.forEach { grainClass ->
-                grainClassRoot.subMenu.addItem(grainClassOptionView(grainClass, grainClassColors[grainClass])) {
-                    applyGrainClassQuickFilter(grainClass)
-                    rebuildFilterAddMenu()
-                }.apply {
-                    isCheckable = true
-                    isChecked = grainClass in selectedGrainClasses
-                }
-            }
-        }
+        populateGrainClassMenu(grainClassRoot.subMenu)
 
         root.subMenu.addItem("Статус") { addFilter(ObjectFilter.STATUS) }.also {
             filterMenuItems[ObjectFilter.STATUS] = it
@@ -420,10 +424,27 @@ class MainView : VerticalLayout() {
 
     private fun applyGrainClassQuickFilter(grainClass: String) {
         activeFilters.add(ObjectFilter.GRAIN_CLASS)
-        val selected = grainClassFilter.selectedItems.map { it.trim() }.filter { it.isNotBlank() }.toMutableSet()
+        val selected = selectedGrainClasses.toMutableSet()
         if (grainClass in selected) selected.remove(grainClass) else selected.add(grainClass)
         setGrainClassFilterSelection(selected)
         rebuildVisibleFilterControls()
+    }
+
+    private fun populateGrainClassMenu(menu: SubMenu) {
+        if (availableGrainClassItems.isEmpty()) {
+            menu.addItem("Нет классов").apply { isEnabled = false }
+            return
+        }
+        availableGrainClassItems.forEach { grainClass ->
+            menu.addItem(grainClassOptionView(grainClass, grainClassColorsByClass[grainClass])) {
+                applyGrainClassQuickFilter(grainClass)
+                rebuildFilterAddMenu()
+                rebuildGrainClassToolbarMenu()
+            }.apply {
+                isCheckable = true
+                isChecked = grainClass in selectedGrainClasses
+            }
+        }
     }
 
     private fun cardFieldsMenu(): MenuBar =
@@ -502,7 +523,7 @@ class MainView : VerticalLayout() {
     private fun removeFilter(filter: ObjectFilter) {
         if (!activeFilters.remove(filter)) return
         when (filter) {
-            ObjectFilter.GRAIN_CLASS -> grainClassFilter.clear()
+            ObjectFilter.GRAIN_CLASS -> setGrainClassFilterSelection(emptySet())
             ObjectFilter.STATUS -> statusFilter.clear()
             ObjectFilter.CONFIDENCE -> {
                 confidenceFromFilter.clear()
@@ -527,7 +548,7 @@ class MainView : VerticalLayout() {
         activeFilters.forEach { filter ->
             filterControls.add(
                 when (filter) {
-                    ObjectFilter.GRAIN_CLASS -> compactFilterGroup("", grainClassFilter, filter)
+                    ObjectFilter.GRAIN_CLASS -> compactGrainClassFilterGroup(filter)
                     ObjectFilter.STATUS -> compactFilterGroup("Статус", statusFilter, filter)
                     ObjectFilter.CONFIDENCE -> compactPairFilterGroup("Уверенность", confidenceFromFilter, confidenceToFilter, filter)
                     ObjectFilter.ANALYSIS_DATE -> compactPairFilterGroup("Дата", analysisDateFromFilter, analysisDateToFilter, filter)
@@ -551,6 +572,17 @@ class MainView : VerticalLayout() {
             add(field, removeFilterButton(filter))
         }
 
+    private fun compactGrainClassFilterGroup(filter: ObjectFilter): Component =
+        HorizontalLayout().apply {
+            isPadding = false
+            isSpacing = true
+            style["gap"] = "4px"
+            setAlignItems(FlexComponent.Alignment.CENTER)
+            val selectedCount = selectedGrainClasses.size
+            val caption = if (selectedCount == 0) "Классы: все" else "Классы: $selectedCount"
+            add(Span(caption), removeFilterButton(filter))
+        }
+
     private fun compactPairFilterGroup(title: String, first: Component, second: Component, filter: ObjectFilter): Component =
         HorizontalLayout(Span(title), first, second, removeFilterButton(filter)).apply {
             isPadding = false
@@ -568,7 +600,7 @@ class MainView : VerticalLayout() {
 
     private fun clearFilters() {
         activeFilters.clear()
-        grainClassFilter.clear()
+        setGrainClassFilterSelection(emptySet())
         statusFilter.clear()
         confidenceFromFilter.clear()
         confidenceToFilter.clear()
@@ -581,16 +613,6 @@ class MainView : VerticalLayout() {
     }
 
     private fun initFilterListeners() {
-        grainClassFilter.addValueChangeListener {
-            val selectedGrainClasses = it.value.map { value -> value.trim() }.filter { value -> value.isNotBlank() }.toSet()
-            if (MULTIPHASE_CLASS_NAME in selectedGrainClasses) {
-                showMasksOnCards = true
-                rebuildCardFieldsMenu(cardFieldsMenuBar)
-            }
-            updateGrainClassFilterChipColors(grainClassColorMapForCurrentDataset())
-            rebuildFilterAddMenu()
-            refreshObjectGallery(resetPaging = true)
-        }
         statusFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
         confidenceFromFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
         confidenceToFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
@@ -602,10 +624,7 @@ class MainView : VerticalLayout() {
     }
 
     private fun refreshFilterOptions(objects: List<DatasetObject>) {
-        val currentGrainClassFilter = grainClassFilter.selectedItems
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .toSet()
+        val currentGrainClassFilter = selectedGrainClasses.toSet()
         val currentStatusFilter = statusFilter.value?.trim().orEmpty()
         val grainClassColors = objects
             .mapNotNull { candidate ->
@@ -627,15 +646,12 @@ class MainView : VerticalLayout() {
             .distinct()
             .sorted()
 
-        grainClassFilter.setItems(grainClassItems)
-        grainClassFilter.setItemLabelGenerator { it }
-        grainClassFilter.setRenderer(ComponentRenderer { grainClass ->
-            grainClassOptionView(grainClass, grainClassColors[grainClass])
-        })
+        availableGrainClassItems = grainClassItems
+        grainClassColorsByClass = grainClassColors
         setGrainClassFilterSelection(currentGrainClassFilter.filter { it in grainClassItems }.toSet())
         statusFilter.setItems(statusItems)
         rebuildFilterAddMenu()
-        updateGrainClassFilterChipColors(grainClassColors)
+        rebuildGrainClassToolbarMenu()
     }
 
     private fun refreshObjectGallery(resetPaging: Boolean = false) {
@@ -670,10 +686,7 @@ class MainView : VerticalLayout() {
     }
 
     private fun applyFilters(objects: List<DatasetObject>): List<DatasetObject> {
-        val selectedGrainClasses = grainClassFilter.selectedItems
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .toSet()
+        val selectedClassFilters = selectedGrainClasses.toSet()
         val status = statusFilter.value?.trim().orEmpty()
         val confidenceFrom = confidenceFromFilter.value
         val confidenceTo = confidenceToFilter.value
@@ -684,9 +697,9 @@ class MainView : VerticalLayout() {
         val reviewed = reviewedFilter.value
 
         return objects.filter { obj ->
-            if (ObjectFilter.GRAIN_CLASS in activeFilters && selectedGrainClasses.isNotEmpty()) {
-                val includesMultiphase = MULTIPHASE_CLASS_NAME in selectedGrainClasses
-                val classTerms = selectedGrainClasses - MULTIPHASE_CLASS_NAME
+            if (ObjectFilter.GRAIN_CLASS in activeFilters && selectedClassFilters.isNotEmpty()) {
+                val includesMultiphase = MULTIPHASE_CLASS_NAME in selectedClassFilters
+                val classTerms = selectedClassFilters - MULTIPHASE_CLASS_NAME
                 val objectIsMultiphase = isMultiphaseObject(obj)
 
                 if (includesMultiphase) {
@@ -1705,10 +1718,7 @@ class MainView : VerticalLayout() {
             }
             applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
             selectedProject?.let { refreshFilterOptions(it.objects) }
-            val activeFilterValues = grainClassFilter.selectedItems
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .toMutableSet()
+            val activeFilterValues = selectedGrainClasses.toMutableSet()
             val shouldKeepEditedObjectVisible =
                 ObjectFilter.GRAIN_CLASS in activeFilters &&
                     previousValue.isNotBlank() &&
@@ -1804,12 +1814,17 @@ class MainView : VerticalLayout() {
     }
 
     private fun setGrainClassFilterSelection(values: Set<String>) {
-        val current = grainClassFilter.selectedItems.map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        val current = selectedGrainClasses.toSet()
         if (current == values) return
-        grainClassFilter.clear()
-        if (values.isNotEmpty()) {
-            grainClassFilter.select(*values.toTypedArray())
+        selectedGrainClasses.clear()
+        selectedGrainClasses.addAll(values)
+        if (MULTIPHASE_CLASS_NAME in selectedGrainClasses) {
+            showMasksOnCards = true
+            rebuildCardFieldsMenu(cardFieldsMenuBar)
         }
+        rebuildFilterAddMenu()
+        rebuildGrainClassToolbarMenu()
+        refreshObjectGallery(resetPaging = true)
     }
 
     private fun isMultiphaseObject(obj: DatasetObject): Boolean =
@@ -1856,53 +1871,6 @@ class MainView : VerticalLayout() {
             style["display"] = "inline-block"
             style["flex-shrink"] = "0"
         }
-    }
-
-    private fun updateGrainClassFilterChipColors(colorByGrainClass: Map<String, String>) {
-        val colorMapJson = jsonMapper.writeValueAsString(
-            colorByGrainClass.mapValues { (_, raw) -> normalizeMaskColor(raw).orEmpty() }
-        )
-        grainClassFilter.element.executeJs(
-            """
-            const colorMap = JSON.parse($0);
-            requestAnimationFrame(() => {
-              const host = this;
-              const root = host && host.shadowRoot;
-              if (!root) return;
-              const chips = root.querySelectorAll('vaadin-multi-select-combo-box-chip');
-              chips.forEach((chip) => {
-                const label = chip.getAttribute('label') || '';
-                const rawColor = colorMap[label] || '';
-                const chipRoot = chip.shadowRoot;
-                if (!chipRoot) return;
-                const labelPart = chipRoot.querySelector('[part=\"label\"]');
-                if (!labelPart) return;
-                labelPart.style.display = 'inline-flex';
-                labelPart.style.alignItems = 'center';
-                labelPart.style.gap = '6px';
-                let dot = chipRoot.querySelector('.grain-class-chip-dot');
-                if (!dot) {
-                  dot = document.createElement('span');
-                  dot.className = 'grain-class-chip-dot';
-                  dot.style.width = '10px';
-                  dot.style.height = '10px';
-                  dot.style.borderRadius = '999px';
-                  dot.style.display = 'inline-block';
-                  dot.style.flexShrink = '0';
-                  labelPart.prepend(dot);
-                }
-                if (rawColor) {
-                  dot.style.background = '#' + rawColor.replace(/^0x/i, '');
-                  dot.style.border = '1px solid rgba(255,255,255,0.35)';
-                } else {
-                  dot.style.background = 'transparent';
-                  dot.style.border = '1px solid var(--lumo-contrast-30pct)';
-                }
-              });
-            });
-            """.trimIndent(),
-            colorMapJson
-        )
     }
 
     private fun colorPreviewEditor(value: String): Component {
