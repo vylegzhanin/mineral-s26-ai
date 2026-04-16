@@ -382,10 +382,10 @@ class MainView : VerticalLayout() {
         grainClassFilterToolbarMenuBar.isVisible = true
         grainClassFilterToolbarMenuBar.style.set("--vaadin-button-min-width", "0")
         selected.forEach { grainClass ->
-            val root = grainClassFilterToolbarMenuBar.addItem(toolbarColorIcon(grainClassColorsByClass[grainClass]))
+            val root = grainClassFilterToolbarMenuBar.addItem(toolbarColorDot(grainClassColorsByClass[grainClass]))
             root.element.setProperty("title", "Класс: $grainClass")
-            root.element.style["padding"] = "0"
-            root.element.style["min-width"] = "18px"
+            root.element.style["padding"] = "0 3px"
+            root.element.style["min-width"] = "22px"
             populateGrainClassMenu(root.subMenu)
             styleToolbarMenu(grainClassFilterToolbarMenuBar, root)
         }
@@ -1859,12 +1859,16 @@ class MainView : VerticalLayout() {
         }
     }
 
-    private fun toolbarColorIcon(rawMaskColor: String?): Component {
+    private fun toolbarColorDot(rawMaskColor: String?): Component {
         val maskColor = normalizeMaskColor(rawMaskColor)
-        return VaadinIcon.CIRCLE.create().apply {
+        return com.vaadin.flow.component.html.Div().apply {
             style["width"] = "12px"
             style["height"] = "12px"
-            style["color"] = if (maskColor == null) "var(--lumo-primary-color)" else "#" + maskColor.removePrefix("0x")
+            style["border-radius"] = "999px"
+            style["display"] = "inline-block"
+            style["flex-shrink"] = "0"
+            style["background"] = if (maskColor == null) "var(--lumo-primary-color-50pct)" else "#" + maskColor.removePrefix("0x")
+            style["border"] = "1px solid var(--lumo-contrast-60pct)"
         }
     }
 
