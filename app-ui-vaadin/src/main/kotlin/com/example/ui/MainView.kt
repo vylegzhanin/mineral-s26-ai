@@ -380,6 +380,8 @@ class MainView : VerticalLayout() {
             return
         }
         grainClassFilterToolbarMenuBar.isVisible = true
+        grainClassFilterToolbarMenuBar.style.set("--vaadin-button-min-width", "0")
+        grainClassFilterToolbarMenuBar.style["overflow"] = "visible"
         val rootContent = HorizontalLayout().apply {
             isPadding = false
             isSpacing = true
@@ -387,10 +389,15 @@ class MainView : VerticalLayout() {
             style["gap"] = "4px"
             style["padding"] = "0"
             style["margin"] = "0"
+            style["flex-wrap"] = "nowrap"
+            style["white-space"] = "nowrap"
             selected.forEach { grainClass -> add(colorDot(grainClassColorsByClass[grainClass])) }
         }
         val root = grainClassFilterToolbarMenuBar.addItem(rootContent)
         root.element.setProperty("title", "Фильтр по классам")
+        root.element.style["min-width"] = "auto"
+        root.element.style["width"] = "auto"
+        root.element.style["overflow"] = "visible"
         populateGrainClassMenu(root.subMenu)
         styleToolbarMenu(grainClassFilterToolbarMenuBar, root)
     }
