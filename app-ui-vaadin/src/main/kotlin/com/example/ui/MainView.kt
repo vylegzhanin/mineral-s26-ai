@@ -1655,6 +1655,7 @@ class MainView : VerticalLayout() {
             val normalizedValue = selectedGrainClass.trim()
             val previousValue = obj.properties["grain_class"]?.trim().orEmpty()
             obj.properties["grain_class"] = normalizedValue
+            val phaseAreaSharesChanged = syncSinglePhaseAreaSharesWithGrainClass(obj, normalizedValue)
             colorByGrainClass[normalizedValue]?.let { nativeMaskColor ->
                 obj.properties["mask_color_rgb"] = nativeMaskColor
             }
@@ -1673,8 +1674,9 @@ class MainView : VerticalLayout() {
                 } else {
                     grainClassFilter.value = normalizedValue
                 }
+            } else if ("grain_class" in cardVisibleFields || (phaseAreaSharesChanged && "phase_area_shares" in cardVisibleFields)) {
+                refreshObjectGallery(resetPaging = false)
             }
-            refreshObjectGallery(resetPaging = false)
         }
 
         applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
@@ -1686,6 +1688,27 @@ class MainView : VerticalLayout() {
             }
         }
         return editor
+    }
+
+    private fun syncSinglePhaseAreaSharesWithGrainClass(obj: DatasetObject, grainClass: String): Boolean {
+        if (grainClass.isBlank()) return false
+        val isMultiPhaseObject = obj.properties["object_phase_type"]?.trim()?.lowercase() == "multi_phase"
+        if (isMultiPhaseObject) return false
+
+        val rawJson = obj.properties["phase_area_shares"].orEmpty().trim()
+        if (rawJson.isBlank()) return false
+        val root = runCatching { ObjectMapper().readTree(rawJson) }.getOrNull() ?: return false
+        if (!root.isObject || root.size() != 1) return false
+
+        val currentEntry = root.properties().firstOrNull() ?: return false
+        if (currentEntry.key == grainClass) return false
+
+        val updatedJson = ObjectMapper()
+            .createObjectNode()
+            .set<com.fasterxml.jackson.databind.JsonNode>(grainClass, currentEntry.value)
+            .toString()
+        obj.properties["phase_area_shares"] = updatedJson
+        return true
     }
 
     private fun grainClassOptionsForCurrentDataset(currentValue: String): List<String> {
