@@ -930,9 +930,12 @@ class MainView : VerticalLayout() {
         val resolvedObjects = if (
             cachedObjects.isNotEmpty() &&
                 cachedObjects.all { cached ->
-                    val hasMaskedPreview = Files.exists(cacheDir.resolve(cached.previewFileName))
+                    val hasMaskedPreview =
+                        cached.previewFileName.isNotBlank() &&
+                            Files.isRegularFile(cacheDir.resolve(cached.previewFileName))
                     val hasCropPreview = cached.properties["crop_preview_file"]
-                        ?.let { cropPreviewFile -> Files.exists(cacheDir.resolve(cropPreviewFile)) }
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { cropPreviewFile -> Files.isRegularFile(cacheDir.resolve(cropPreviewFile)) }
                         ?: false
                     hasMaskedPreview && hasCropPreview
                 }
