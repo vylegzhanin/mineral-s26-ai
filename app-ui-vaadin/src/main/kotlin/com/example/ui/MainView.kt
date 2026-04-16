@@ -382,7 +382,7 @@ class MainView : VerticalLayout() {
         grainClassFilterToolbarMenuBar.isVisible = true
         grainClassFilterToolbarMenuBar.style.set("--vaadin-button-min-width", "0")
         selected.forEach { grainClass ->
-            val root = grainClassFilterToolbarMenuBar.addItem(colorDot(grainClassColorsByClass[grainClass]))
+            val root = grainClassFilterToolbarMenuBar.addItem(toolbarColorIcon(grainClassColorsByClass[grainClass]))
             root.element.setProperty("title", "Класс: $grainClass")
             root.element.style["padding"] = "0"
             root.element.style["min-width"] = "18px"
@@ -1856,6 +1856,15 @@ class MainView : VerticalLayout() {
             style["border"] = "1px solid $borderColor"
             style["display"] = "inline-block"
             style["flex-shrink"] = "0"
+        }
+    }
+
+    private fun toolbarColorIcon(rawMaskColor: String?): Component {
+        val maskColor = normalizeMaskColor(rawMaskColor)
+        return VaadinIcon.CIRCLE.create().apply {
+            style["width"] = "12px"
+            style["height"] = "12px"
+            style["color"] = if (maskColor == null) "var(--lumo-primary-color)" else "#" + maskColor.removePrefix("0x")
         }
     }
 
