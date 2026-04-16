@@ -4,6 +4,7 @@ import com.vaadin.flow.component.Component
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.checkbox.Checkbox
 import com.vaadin.flow.component.combobox.ComboBox
+import com.vaadin.flow.component.combobox.MultiSelectComboBox
 import com.vaadin.flow.component.datepicker.DatePicker
 import com.vaadin.flow.component.contextmenu.MenuItem
 import com.vaadin.flow.component.dialog.Dialog
@@ -79,12 +80,11 @@ class MainView : VerticalLayout() {
         style["flex-wrap"] = "wrap"
         style["justify-content"] = "flex-end"
     }
-    private val grainClassFilter = ComboBox<String>().apply {
-        placeholder = "Grain"
-        isClearButtonVisible = true
-        setWidth("240px")
-        style["min-width"] = "180px"
-        style["max-width"] = "320px"
+    private val grainClassFilter = MultiSelectComboBox<String>().apply {
+        placeholder = "Grain class"
+        setWidth("300px")
+        style["min-width"] = "220px"
+        style["max-width"] = "420px"
         setItemLabelGenerator { it }
     }
     private val statusFilter = ComboBox<String>().apply {
@@ -414,11 +414,10 @@ class MainView : VerticalLayout() {
 
     private fun applyGrainClassQuickFilter(grainClass: String) {
         activeFilters.add(ObjectFilter.GRAIN_CLASS)
-        if (grainClassFilter.value != grainClass) {
-            grainClassFilter.value = grainClass
-        }
+        val selected = grainClassFilter.selectedItems.map { it.trim() }.filter { it.isNotBlank() }.toMutableSet()
+        if (grainClass in selected) selected.remove(grainClass) else selected.add(grainClass)
+        setGrainClassFilterSelection(selected)
         rebuildVisibleFilterControls()
-        refreshObjectGallery(resetPaging = true)
     }
 
     private fun cardFieldsMenu(): MenuBar =
@@ -577,9 +576,8 @@ class MainView : VerticalLayout() {
 
     private fun initFilterListeners() {
         grainClassFilter.addValueChangeListener {
-            val selectedGrainClass = it.value?.trim().orEmpty()
-            applyColorIconToCombo(grainClassFilter, grainClassColorMapForCurrentDataset()[selectedGrainClass])
-            if (selectedGrainClass == MULTIPHASE_CLASS_NAME) {
+            val selectedGrainClasses = it.value.map { value -> value.trim() }.filter { value -> value.isNotBlank() }.toSet()
+            if (MULTIPHASE_CLASS_NAME in selectedGrainClasses) {
                 showMasksOnCards = true
                 rebuildCardFieldsMenu(cardFieldsMenuBar)
             }
@@ -596,7 +594,10 @@ class MainView : VerticalLayout() {
     }
 
     private fun refreshFilterOptions(objects: List<DatasetObject>) {
-        val currentGrainClassFilter = grainClassFilter.value?.trim().orEmpty()
+        val currentGrainClassFilter = grainClassFilter.selectedItems
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
         val currentStatusFilter = statusFilter.value?.trim().orEmpty()
         val grainClassColors = objects
             .mapNotNull { candidate ->
@@ -622,8 +623,7 @@ class MainView : VerticalLayout() {
         grainClassFilter.setRenderer(ComponentRenderer { grainClass ->
             grainClassOptionView(grainClass, grainClassColors[grainClass])
         })
-        val actualGrainClassValue = grainClassFilter.value?.trim().orEmpty()
-        applyColorIconToCombo(grainClassFilter, grainClassColors[actualGrainClassValue])
+        setGrainClassFilterSelection(currentGrainClassFilter.filter { it in grainClassItems }.toSet())
         statusFilter.setItems(statusItems)
         rebuildFilterAddMenu()
     }
@@ -660,7 +660,10 @@ class MainView : VerticalLayout() {
     }
 
     private fun applyFilters(objects: List<DatasetObject>): List<DatasetObject> {
-        val grainClass = grainClassFilter.value?.trim().orEmpty()
+        val selectedGrainClasses = grainClassFilter.selectedItems
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
         val status = statusFilter.value?.trim().orEmpty()
         val confidenceFrom = confidenceFromFilter.value
         val confidenceTo = confidenceToFilter.value
@@ -671,7 +674,20 @@ class MainView : VerticalLayout() {
         val reviewed = reviewedFilter.value
 
         return objects.filter { obj ->
-            if (ObjectFilter.GRAIN_CLASS in activeFilters && grainClass.isNotEmpty() && obj.properties["grain_class"] != grainClass) return@filter false
+            if (ObjectFilter.GRAIN_CLASS in activeFilters && selectedGrainClasses.isNotEmpty()) {
+                val includesMultiphase = MULTIPHASE_CLASS_NAME in selectedGrainClasses
+                val classTerms = selectedGrainClasses - MULTIPHASE_CLASS_NAME
+                val objectIsMultiphase = isMultiphaseObject(obj)
+
+                if (includesMultiphase) {
+                    if (!objectIsMultiphase) return@filter false
+                    if (classTerms.isNotEmpty() && !objectHasAnyPhaseClass(obj, classTerms)) return@filter false
+                } else {
+                    val matchesClass = obj.properties["grain_class"]?.trim() in classTerms
+                    val matchesPhaseClass = classTerms.isNotEmpty() && objectHasAnyPhaseClass(obj, classTerms)
+                    if (!matchesClass && !matchesPhaseClass) return@filter false
+                }
+            }
             if (ObjectFilter.STATUS in activeFilters && status.isNotEmpty() && obj.properties["meta_status"] != status) return@filter false
 
             val confidence = obj.properties["meta_confidence"]?.toDoubleOrNull()
@@ -1679,19 +1695,20 @@ class MainView : VerticalLayout() {
             }
             applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
             selectedProject?.let { refreshFilterOptions(it.objects) }
-            val activeFilterValue = grainClassFilter.value?.trim().orEmpty()
+            val activeFilterValues = grainClassFilter.selectedItems
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .toMutableSet()
             val shouldKeepEditedObjectVisible =
                 ObjectFilter.GRAIN_CLASS in activeFilters &&
-                    activeFilterValue.isNotBlank() &&
-                    activeFilterValue == previousValue &&
-                    normalizedValue != activeFilterValue
+                    previousValue.isNotBlank() &&
+                    previousValue in activeFilterValues &&
+                    normalizedValue != previousValue
 
             if (shouldKeepEditedObjectVisible) {
-                if (normalizedValue.isBlank()) {
-                    grainClassFilter.clear()
-                } else {
-                    grainClassFilter.value = normalizedValue
-                }
+                activeFilterValues.remove(previousValue)
+                if (normalizedValue.isNotBlank()) activeFilterValues.add(normalizedValue)
+                setGrainClassFilterSelection(activeFilterValues)
             } else if ("grain_class" in cardVisibleFields || (phaseAreaSharesChanged && "phase_area_shares" in cardVisibleFields)) {
                 refreshObjectGallery(resetPaging = false)
             }
@@ -1774,6 +1791,28 @@ class MainView : VerticalLayout() {
             return
         }
         editor.prefixComponent = colorDot(maskColor)
+    }
+
+    private fun setGrainClassFilterSelection(values: Set<String>) {
+        val current = grainClassFilter.selectedItems.map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        if (current == values) return
+        grainClassFilter.clear()
+        if (values.isNotEmpty()) {
+            grainClassFilter.select(*values.toTypedArray())
+        }
+    }
+
+    private fun isMultiphaseObject(obj: DatasetObject): Boolean =
+        obj.properties["object_phase_type"]?.trim()?.lowercase() == "multi_phase" ||
+            obj.properties["grain_class"]?.trim() == MULTIPHASE_CLASS_NAME
+
+    private fun objectHasAnyPhaseClass(obj: DatasetObject, classes: Set<String>): Boolean {
+        if (classes.isEmpty()) return false
+        val rawJson = obj.properties["phase_area_shares"].orEmpty().trim()
+        if (rawJson.isBlank()) return false
+        val root = runCatching { jsonMapper.readTree(rawJson) }.getOrNull() ?: return false
+        if (!root.isObject) return false
+        return root.properties().asSequence().any { (phaseName, _) -> phaseName in classes }
     }
 
     private fun grainClassOptionView(grainClass: String, rawMaskColor: String?): Component =
