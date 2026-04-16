@@ -381,14 +381,27 @@ class MainView : VerticalLayout() {
         }
         grainClassFilterToolbarMenuBar.isVisible = true
         grainClassFilterToolbarMenuBar.style.set("--vaadin-button-min-width", "0")
-        selected.forEach { grainClass ->
-            val root = grainClassFilterToolbarMenuBar.addItem(toolbarColorDot(grainClassColorsByClass[grainClass]))
-            root.element.setProperty("title", "Класс: $grainClass")
-            root.element.style["padding"] = "0 3px"
-            root.element.style["min-width"] = "22px"
-            populateGrainClassMenu(root.subMenu)
-            styleToolbarMenu(grainClassFilterToolbarMenuBar, root)
+        val contentWidth = selected.size * 12 + (selected.size - 1) * 4
+        val rootContent = HorizontalLayout().apply {
+            isPadding = false
+            isSpacing = true
+            setAlignItems(FlexComponent.Alignment.CENTER)
+            style["gap"] = "4px"
+            style["width"] = "${contentWidth}px"
+            style["min-width"] = "${contentWidth}px"
+            style["max-width"] = "${contentWidth}px"
+            style["height"] = "12px"
+            style["overflow"] = "hidden"
+            selected.forEach { grainClass -> add(toolbarColorDot(grainClassColorsByClass[grainClass])) }
         }
+
+        val root = grainClassFilterToolbarMenuBar.addItem(rootContent)
+        root.element.setProperty("title", "Фильтр по классам")
+        root.element.style["padding"] = "0 6px"
+        root.element.style["min-width"] = "${contentWidth + 12}px"
+        root.element.style["height"] = "28px"
+        populateGrainClassMenu(root.subMenu)
+        styleToolbarMenu(grainClassFilterToolbarMenuBar, root)
     }
 
     private fun rebuildFilterAddMenu() {
