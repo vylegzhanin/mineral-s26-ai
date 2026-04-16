@@ -1438,13 +1438,14 @@ class MainView : VerticalLayout() {
             .mapNotNull { (phaseName, rawValueNode) ->
                 val value = rawValueNode.asDouble(Double.NaN)
                 if (value.isNaN()) return@mapNotNull null
-                val rounded = String.format(Locale.US, "%.1f", value)
+                val percentValue = if (value <= 1.0) value * 100.0 else value
+                val roundedPercent = String.format(Locale.US, "%.1f%%", percentValue)
                 val phaseColor = colorsByPhase[phaseName]
                     ?.let { normalizeMaskColor(it) }
                     ?.let { "#" + it.removePrefix("0x") }
                     ?: "white"
                 OverlayLine(
-                    text = if (isSinglePhaseObject) phaseName else "$phaseName: $rounded",
+                    text = if (isSinglePhaseObject) phaseName else "$phaseName: $roundedPercent",
                     color = phaseColor
                 )
             }
