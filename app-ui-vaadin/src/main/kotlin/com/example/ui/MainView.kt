@@ -1673,9 +1673,8 @@ class MainView : VerticalLayout() {
                 } else {
                     grainClassFilter.value = normalizedValue
                 }
-            } else {
-                refreshObjectGallery(resetPaging = false)
             }
+            refreshObjectGallery(resetPaging = false)
         }
 
         applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
