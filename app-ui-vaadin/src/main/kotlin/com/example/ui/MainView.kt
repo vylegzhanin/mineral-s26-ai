@@ -1011,6 +1011,7 @@ class MainView : VerticalLayout() {
         val resolvedObjects = project.objects.map { obj ->
             val resolvedProperties = obj.properties.toMutableMap()
             obj.properties["mask_crop_url"]?.let { resolvedProperties["mask_crop_url"] = resolvePreviewUrl(it) }
+            obj.properties["crop_preview_url"]?.let { resolvedProperties["crop_preview_url"] = resolvePreviewUrl(it) }
             obj.copy(
                 previewUrl = resolvePreviewUrl(obj.previewUrl),
                 properties = resolvedProperties
