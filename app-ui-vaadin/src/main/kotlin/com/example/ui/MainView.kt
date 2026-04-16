@@ -587,6 +587,7 @@ class MainView : VerticalLayout() {
                 showMasksOnCards = true
                 rebuildCardFieldsMenu(cardFieldsMenuBar)
             }
+            updateGrainClassFilterChipColors(grainClassColorMapForCurrentDataset())
             rebuildFilterAddMenu()
             refreshObjectGallery(resetPaging = true)
         }
@@ -627,15 +628,14 @@ class MainView : VerticalLayout() {
             .sorted()
 
         grainClassFilter.setItems(grainClassItems)
-        grainClassFilter.setItemLabelGenerator { grainClass ->
-            grainClassLabelWithColor(grainClass, grainClassColors[grainClass])
-        }
+        grainClassFilter.setItemLabelGenerator { it }
         grainClassFilter.setRenderer(ComponentRenderer { grainClass ->
             grainClassOptionView(grainClass, grainClassColors[grainClass])
         })
         setGrainClassFilterSelection(currentGrainClassFilter.filter { it in grainClassItems }.toSet())
         statusFilter.setItems(statusItems)
         rebuildFilterAddMenu()
+        updateGrainClassFilterChipColors(grainClassColors)
     }
 
     private fun refreshObjectGallery(resetPaging: Boolean = false) {
@@ -1843,12 +1843,6 @@ class MainView : VerticalLayout() {
             style["gap"] = "8px"
         }
 
-    private fun grainClassLabelWithColor(grainClass: String, rawMaskColor: String?): String {
-        val maskColor = normalizeMaskColor(rawMaskColor) ?: return grainClass
-        val hexColor = "#" + maskColor.removePrefix("0x")
-        return "$grainClass · $hexColor"
-    }
-
     private fun colorDot(rawMaskColor: String?): Component {
         val maskColor = normalizeMaskColor(rawMaskColor)
         val cssHex = if (maskColor == null) "transparent" else "#" + maskColor.removePrefix("0x")
@@ -1862,6 +1856,53 @@ class MainView : VerticalLayout() {
             style["display"] = "inline-block"
             style["flex-shrink"] = "0"
         }
+    }
+
+    private fun updateGrainClassFilterChipColors(colorByGrainClass: Map<String, String>) {
+        val colorMapJson = jsonMapper.writeValueAsString(
+            colorByGrainClass.mapValues { (_, raw) -> normalizeMaskColor(raw).orEmpty() }
+        )
+        grainClassFilter.element.executeJs(
+            """
+            const colorMap = JSON.parse($0);
+            requestAnimationFrame(() => {
+              const host = this;
+              const root = host && host.shadowRoot;
+              if (!root) return;
+              const chips = root.querySelectorAll('vaadin-multi-select-combo-box-chip');
+              chips.forEach((chip) => {
+                const label = chip.getAttribute('label') || '';
+                const rawColor = colorMap[label] || '';
+                const chipRoot = chip.shadowRoot;
+                if (!chipRoot) return;
+                const labelPart = chipRoot.querySelector('[part=\"label\"]');
+                if (!labelPart) return;
+                labelPart.style.display = 'inline-flex';
+                labelPart.style.alignItems = 'center';
+                labelPart.style.gap = '6px';
+                let dot = chipRoot.querySelector('.grain-class-chip-dot');
+                if (!dot) {
+                  dot = document.createElement('span');
+                  dot.className = 'grain-class-chip-dot';
+                  dot.style.width = '10px';
+                  dot.style.height = '10px';
+                  dot.style.borderRadius = '999px';
+                  dot.style.display = 'inline-block';
+                  dot.style.flexShrink = '0';
+                  labelPart.prepend(dot);
+                }
+                if (rawColor) {
+                  dot.style.background = '#' + rawColor.replace(/^0x/i, '');
+                  dot.style.border = '1px solid rgba(255,255,255,0.35)';
+                } else {
+                  dot.style.background = 'transparent';
+                  dot.style.border = '1px solid var(--lumo-contrast-30pct)';
+                }
+              });
+            });
+            """.trimIndent(),
+            colorMapJson
+        )
     }
 
     private fun colorPreviewEditor(value: String): Component {
