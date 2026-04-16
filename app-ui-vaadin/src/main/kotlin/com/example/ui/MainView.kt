@@ -391,7 +391,7 @@ class MainView : VerticalLayout() {
             style["min-width"] = "auto"
             style["max-width"] = "none"
             style["height"] = "14px"
-            style["padding"] = "0 8px"
+            style["padding"] = "0 16px"
             style["white-space"] = "nowrap"
             style["overflow"] = "visible"
             selected.forEach { grainClass -> add(toolbarColorDot(grainClassColorsByClass[grainClass])) }
@@ -1864,13 +1864,12 @@ class MainView : VerticalLayout() {
     private fun colorDot(rawMaskColor: String?): Component {
         val maskColor = normalizeMaskColor(rawMaskColor)
         val cssHex = if (maskColor == null) "transparent" else "#" + maskColor.removePrefix("0x")
-        val borderColor = if (maskColor == null) "var(--lumo-contrast-30pct)" else "rgba(255,255,255,0.35)"
         return com.vaadin.flow.component.html.Div().apply {
-            style["width"] = "10px"
-            style["height"] = "10px"
+            style["width"] = "12px"
+            style["height"] = "12px"
             style["border-radius"] = "999px"
             style["background"] = cssHex
-            style["border"] = "1px solid $borderColor"
+            style["border"] = "1px solid rgba(0,0,0,0.85)"
             style["display"] = "inline-block"
             style["flex-shrink"] = "0"
         }
@@ -1885,7 +1884,7 @@ class MainView : VerticalLayout() {
             style["display"] = "inline-block"
             style["flex-shrink"] = "0"
             style["background"] = if (maskColor == null) "var(--lumo-primary-color-50pct)" else "#" + maskColor.removePrefix("0x")
-            style["border"] = "1px solid var(--lumo-contrast-60pct)"
+            style["border"] = "1px solid rgba(0,0,0,0.85)"
         }
     }
 
