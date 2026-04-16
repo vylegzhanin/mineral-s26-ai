@@ -375,6 +375,11 @@ class MainView : VerticalLayout() {
     private fun rebuildGrainClassToolbarMenu() {
         grainClassFilterToolbarMenuBar.removeAll()
         val selected = selectedGrainClasses.toList().sorted()
+        if (selected.isEmpty()) {
+            grainClassFilterToolbarMenuBar.isVisible = false
+            return
+        }
+        grainClassFilterToolbarMenuBar.isVisible = true
         val rootContent = HorizontalLayout().apply {
             isPadding = false
             isSpacing = true
@@ -382,12 +387,7 @@ class MainView : VerticalLayout() {
             style["gap"] = "4px"
             style["padding"] = "0"
             style["margin"] = "0"
-            add(VaadinIcon.PALETTE.create().apply { style["width"] = "14px"; style["height"] = "14px" })
-            if (selected.isEmpty()) {
-                add(Span("классы").apply { style["font-size"] = "var(--lumo-font-size-s)" })
-            } else {
-                selected.forEach { grainClass -> add(colorDot(grainClassColorsByClass[grainClass])) }
-            }
+            selected.forEach { grainClass -> add(colorDot(grainClassColorsByClass[grainClass])) }
         }
         val root = grainClassFilterToolbarMenuBar.addItem(rootContent)
         root.element.setProperty("title", "Фильтр по классам")
@@ -546,16 +546,17 @@ class MainView : VerticalLayout() {
     private fun rebuildVisibleFilterControls() {
         filterControls.removeAll()
         activeFilters.forEach { filter ->
-            filterControls.add(
-                when (filter) {
-                    ObjectFilter.GRAIN_CLASS -> compactGrainClassFilterGroup(filter)
-                    ObjectFilter.STATUS -> compactFilterGroup("Статус", statusFilter, filter)
-                    ObjectFilter.CONFIDENCE -> compactPairFilterGroup("Уверенность", confidenceFromFilter, confidenceToFilter, filter)
-                    ObjectFilter.ANALYSIS_DATE -> compactPairFilterGroup("Дата", analysisDateFromFilter, analysisDateToFilter, filter)
-                    ObjectFilter.REVIEWED -> compactFilterGroup("Проверено", reviewedFilter, filter)
-                    ObjectFilter.AREA -> compactPairFilterGroup("Площадь", areaFromFilter, areaToFilter, filter)
-                }
-            )
+            val control = when (filter) {
+                ObjectFilter.GRAIN_CLASS -> null
+                ObjectFilter.STATUS -> compactFilterGroup("Статус", statusFilter, filter)
+                ObjectFilter.CONFIDENCE -> compactPairFilterGroup("Уверенность", confidenceFromFilter, confidenceToFilter, filter)
+                ObjectFilter.ANALYSIS_DATE -> compactPairFilterGroup("Дата", analysisDateFromFilter, analysisDateToFilter, filter)
+                ObjectFilter.REVIEWED -> compactFilterGroup("Проверено", reviewedFilter, filter)
+                ObjectFilter.AREA -> compactPairFilterGroup("Площадь", areaFromFilter, areaToFilter, filter)
+            }
+            if (control != null) {
+                filterControls.add(control)
+            }
         }
         filterMenuItems.forEach { (filter, item) -> item.isEnabled = filter !in activeFilters }
     }
@@ -570,17 +571,6 @@ class MainView : VerticalLayout() {
                 add(Span(title))
             }
             add(field, removeFilterButton(filter))
-        }
-
-    private fun compactGrainClassFilterGroup(filter: ObjectFilter): Component =
-        HorizontalLayout().apply {
-            isPadding = false
-            isSpacing = true
-            style["gap"] = "4px"
-            setAlignItems(FlexComponent.Alignment.CENTER)
-            val selectedCount = selectedGrainClasses.size
-            val caption = if (selectedCount == 0) "Классы: все" else "Классы: $selectedCount"
-            add(Span(caption), removeFilterButton(filter))
         }
 
     private fun compactPairFilterGroup(title: String, first: Component, second: Component, filter: ObjectFilter): Component =
