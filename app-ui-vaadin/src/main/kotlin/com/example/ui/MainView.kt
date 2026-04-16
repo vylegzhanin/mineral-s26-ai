@@ -587,6 +587,7 @@ class MainView : VerticalLayout() {
                 showMasksOnCards = true
                 rebuildCardFieldsMenu(cardFieldsMenuBar)
             }
+            rebuildFilterAddMenu()
             refreshObjectGallery(resetPaging = true)
         }
         statusFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
@@ -626,6 +627,9 @@ class MainView : VerticalLayout() {
             .sorted()
 
         grainClassFilter.setItems(grainClassItems)
+        grainClassFilter.setItemLabelGenerator { grainClass ->
+            grainClassLabelWithColor(grainClass, grainClassColors[grainClass])
+        }
         grainClassFilter.setRenderer(ComponentRenderer { grainClass ->
             grainClassOptionView(grainClass, grainClassColors[grainClass])
         })
@@ -1838,6 +1842,12 @@ class MainView : VerticalLayout() {
             setAlignItems(FlexComponent.Alignment.CENTER)
             style["gap"] = "8px"
         }
+
+    private fun grainClassLabelWithColor(grainClass: String, rawMaskColor: String?): String {
+        val maskColor = normalizeMaskColor(rawMaskColor) ?: return grainClass
+        val hexColor = "#" + maskColor.removePrefix("0x")
+        return "$grainClass · $hexColor"
+    }
 
     private fun colorDot(rawMaskColor: String?): Component {
         val maskColor = normalizeMaskColor(rawMaskColor)
