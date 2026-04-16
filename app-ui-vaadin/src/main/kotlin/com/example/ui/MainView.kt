@@ -380,9 +380,12 @@ class MainView : VerticalLayout() {
             return
         }
         grainClassFilterToolbarMenuBar.isVisible = true
+        grainClassFilterToolbarMenuBar.style.set("--vaadin-button-min-width", "0")
         selected.forEach { grainClass ->
-            val root = grainClassFilterToolbarMenuBar.addIconItem(colorDot(grainClassColorsByClass[grainClass]))
+            val root = grainClassFilterToolbarMenuBar.addItem(colorDot(grainClassColorsByClass[grainClass]))
             root.element.setProperty("title", "Класс: $grainClass")
+            root.element.style["padding"] = "0"
+            root.element.style["min-width"] = "18px"
             populateGrainClassMenu(root.subMenu)
             styleToolbarMenu(grainClassFilterToolbarMenuBar, root)
         }
