@@ -381,17 +381,19 @@ class MainView : VerticalLayout() {
         }
         grainClassFilterToolbarMenuBar.isVisible = true
         grainClassFilterToolbarMenuBar.style.set("--vaadin-button-min-width", "0")
-        val contentWidth = selected.size * 12 + (selected.size - 1) * 4
+        val dotSizePx = 14
+        val dotGapPx = 4
+        val contentWidth = selected.size * dotSizePx + (selected.size - 1) * dotGapPx
         val rootContent = HorizontalLayout().apply {
             isPadding = false
             isSpacing = true
             setAlignItems(FlexComponent.Alignment.CENTER)
-            style["gap"] = "4px"
+            style["gap"] = "${dotGapPx}px"
             style["width"] = "${contentWidth}px"
             style["min-width"] = "${contentWidth}px"
             style["max-width"] = "${contentWidth}px"
-            style["height"] = "12px"
-            style["overflow"] = "hidden"
+            style["height"] = "${dotSizePx}px"
+            style["overflow"] = "visible"
             selected.forEach { grainClass -> add(toolbarColorDot(grainClassColorsByClass[grainClass])) }
         }
 
@@ -399,6 +401,7 @@ class MainView : VerticalLayout() {
         root.element.setProperty("title", "Фильтр по классам")
         root.element.style["padding"] = "0 6px"
         root.element.style["min-width"] = "${contentWidth + 12}px"
+        root.element.style["width"] = "${contentWidth + 12}px"
         root.element.style["height"] = "28px"
         populateGrainClassMenu(root.subMenu)
         styleToolbarMenu(grainClassFilterToolbarMenuBar, root)
@@ -1875,8 +1878,8 @@ class MainView : VerticalLayout() {
     private fun toolbarColorDot(rawMaskColor: String?): Component {
         val maskColor = normalizeMaskColor(rawMaskColor)
         return com.vaadin.flow.component.html.Div().apply {
-            style["width"] = "12px"
-            style["height"] = "12px"
+            style["width"] = "14px"
+            style["height"] = "14px"
             style["border-radius"] = "999px"
             style["display"] = "inline-block"
             style["flex-shrink"] = "0"
