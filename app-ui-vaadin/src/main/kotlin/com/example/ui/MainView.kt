@@ -391,6 +391,7 @@ class MainView : VerticalLayout() {
             style["min-width"] = "auto"
             style["max-width"] = "none"
             style["height"] = "14px"
+            style["padding"] = "0 8px"
             style["white-space"] = "nowrap"
             style["overflow"] = "visible"
             selected.forEach { grainClass -> add(toolbarColorDot(grainClassColorsByClass[grainClass])) }
@@ -398,7 +399,7 @@ class MainView : VerticalLayout() {
 
         val root = grainClassFilterToolbarMenuBar.addItem(rootContent)
         root.element.setProperty("title", "Фильтр по классам")
-        root.element.style["padding"] = "0 4px"
+        root.element.style["padding"] = "0"
         root.element.style["min-width"] = "auto"
         root.element.style["width"] = "auto"
         root.element.style["height"] = "28px"
