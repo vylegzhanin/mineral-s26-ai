@@ -1284,6 +1284,7 @@ class MainView : VerticalLayout() {
             .toMap()
     }
 
+    @Suppress("DEPRECATION")
     private fun fileResourceUrl(file: Path): String =
         StreamResource(file.fileName.toString()) { Files.newInputStream(file) }.let { resource ->
             val currentUi = ui.orElseThrow { IllegalStateException("UI context is not available for resource registration.") }
@@ -1351,7 +1352,7 @@ class MainView : VerticalLayout() {
             val propertiesNode = node.path("properties")
             val props = mutableMapOf<String, String>()
             if (propertiesNode.isObject) {
-                propertiesNode.fields().forEach { (k, v) -> props[k] = v.asText() }
+                propertiesNode.properties().forEach { (k, v) -> props[k] = v.asText() }
             }
             CachedDatasetObject(id, name, category, preview, props)
         }
@@ -1522,7 +1523,7 @@ class MainView : VerticalLayout() {
         val isSinglePhaseObject = obj.properties["object_phase_type"]?.trim()?.lowercase() != "multi_phase"
         val colorsByPhase = grainClassColorMapForCurrentDataset()
 
-        return root.fields().asSequence()
+        return root.properties().asSequence()
             .mapNotNull { (phaseName, rawValueNode) ->
                 val value = rawValueNode.asDouble(Double.NaN)
                 if (value.isNaN()) return@mapNotNull null
