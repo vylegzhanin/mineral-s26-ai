@@ -141,6 +141,7 @@ class MainView : VerticalLayout() {
     private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
     private val cardVisibleFields = linkedSetOf("phase_area_shares")
     private val cardFieldOrder = mutableListOf<String>()
+    private val jsonMapper = ObjectMapper()
     private var draggedCardField: String? = null
     private var selectedObjectCard: com.vaadin.flow.component.html.Div? = null
     private var visibleObjectLimit: Int = OBJECT_PAGE_SIZE
@@ -260,8 +261,10 @@ class MainView : VerticalLayout() {
         }
 
         val visibleObjects = objects.take(visibleObjectLimit)
+        val visibleCardFields = orderedVisibleCardFields()
+        val grainClassColors = grainClassColorMapForCurrentDataset()
         visibleObjects.forEach { obj ->
-            val card = objectCard(obj, obj == selectedObject) {
+            val card = objectCard(obj, obj == selectedObject, visibleCardFields, grainClassColors) {
                 if (selectedObject?.id == obj.id) {
                     clearSelectedObject()
                 } else {
@@ -1391,7 +1394,13 @@ class MainView : VerticalLayout() {
         }
     }
 
-    private fun objectCard(obj: DatasetObject, selected: Boolean, onClick: () -> Unit): com.vaadin.flow.component.html.Div {
+    private fun objectCard(
+        obj: DatasetObject,
+        selected: Boolean,
+        visibleFields: List<String>,
+        grainClassColors: Map<String, String>,
+        onClick: () -> Unit
+    ): com.vaadin.flow.component.html.Div {
         val titleColor = obj.properties["mask_color_rgb"]
             ?.removePrefix("0x")
             ?.takeIf { it.length == 6 && it.all { ch -> ch.isDigit() || ch.lowercaseChar() in 'a'..'f' } }
@@ -1464,7 +1473,7 @@ class MainView : VerticalLayout() {
             style["-webkit-text-stroke"] = "0.4px rgba(0,0,0,0.95)"
         }
 
-        overlayLinesForCard(obj, titleColor).forEach { line ->
+        overlayLinesForCard(obj, titleColor, visibleFields, grainClassColors).forEach { line ->
             titleOverlay.add(overlayText(line.text, line.color))
         }
 
@@ -1493,13 +1502,18 @@ class MainView : VerticalLayout() {
         return hasMaskUrl
     }
 
-    private fun overlayLinesForCard(obj: DatasetObject, grainClassColor: String): List<OverlayLine> =
-        orderedVisibleCardFields()
+    private fun overlayLinesForCard(
+        obj: DatasetObject,
+        grainClassColor: String,
+        visibleFields: List<String>,
+        grainClassColors: Map<String, String>
+    ): List<OverlayLine> =
+        visibleFields
             .asSequence()
             .flatMap { field ->
                 if (field == "phase_area_shares") {
                     val rawJson = obj.properties[field].orEmpty()
-                    phaseAreaShareOverlayLines(obj, rawJson).asSequence()
+                    phaseAreaShareOverlayLines(obj, rawJson, grainClassColors).asSequence()
                 } else {
                     val value = obj.properties[field]?.trim().orEmpty()
                     if (value.isBlank()) {
@@ -1516,12 +1530,15 @@ class MainView : VerticalLayout() {
             }
             .toList()
 
-    private fun phaseAreaShareOverlayLines(obj: DatasetObject, rawJson: String): List<OverlayLine> {
+    private fun phaseAreaShareOverlayLines(
+        obj: DatasetObject,
+        rawJson: String,
+        grainClassColors: Map<String, String>
+    ): List<OverlayLine> {
         if (rawJson.isBlank()) return emptyList()
-        val root = runCatching { ObjectMapper().readTree(rawJson) }.getOrNull() ?: return emptyList()
+        val root = runCatching { jsonMapper.readTree(rawJson) }.getOrNull() ?: return emptyList()
         if (!root.isObject) return emptyList()
         val isSinglePhaseObject = obj.properties["object_phase_type"]?.trim()?.lowercase() != "multi_phase"
-        val colorsByPhase = grainClassColorMapForCurrentDataset()
 
         return root.properties().asSequence()
             .mapNotNull { (phaseName, rawValueNode) ->
@@ -1529,7 +1546,7 @@ class MainView : VerticalLayout() {
                 if (value.isNaN()) return@mapNotNull null
                 val percentValue = if (value <= 1.0) value * 100.0 else value
                 val roundedPercent = String.format(Locale.US, "%.0f%%", percentValue)
-                val phaseColor = colorsByPhase[phaseName]
+                val phaseColor = grainClassColors[phaseName]
                     ?.let { normalizeMaskColor(it) }
                     ?.let { "#" + it.removePrefix("0x") }
                     ?: "white"
@@ -1542,8 +1559,9 @@ class MainView : VerticalLayout() {
     }
 
     private fun orderedVisibleCardFields(): List<String> {
-        val knownFields = availableCardFieldsForPanel()
-        syncCardFieldOrder(knownFields)
+        if (cardFieldOrder.isEmpty()) {
+            syncCardFieldOrder(availableCardFieldsForPanel())
+        }
         return cardFieldOrder.filter { it in cardVisibleFields }
     }
 
@@ -1697,13 +1715,13 @@ class MainView : VerticalLayout() {
 
         val rawJson = obj.properties["phase_area_shares"].orEmpty().trim()
         if (rawJson.isBlank()) return false
-        val root = runCatching { ObjectMapper().readTree(rawJson) }.getOrNull() ?: return false
+        val root = runCatching { jsonMapper.readTree(rawJson) }.getOrNull() ?: return false
         if (!root.isObject || root.size() != 1) return false
 
         val currentEntry = root.properties().firstOrNull() ?: return false
         if (currentEntry.key == grainClass) return false
 
-        val updatedJson = ObjectMapper()
+        val updatedJson = jsonMapper
             .createObjectNode()
             .set<com.fasterxml.jackson.databind.JsonNode>(grainClass, currentEntry.value)
             .toString()
