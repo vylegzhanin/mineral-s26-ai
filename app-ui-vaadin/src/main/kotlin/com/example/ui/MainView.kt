@@ -133,6 +133,7 @@ class MainView : VerticalLayout() {
         setWidth("110px")
     }
     private var showMasksOnCards: Boolean = false
+    private var cardBackgroundMode: CardBackgroundMode = CardBackgroundMode.MASKED
     private val propertyEditor = com.vaadin.flow.component.html.Div()
     private val cardFieldsPanelTitle = H4("Поля карточек")
     private val cardFieldsMenuBar = MenuBar()
@@ -436,6 +437,23 @@ class MainView : VerticalLayout() {
         }.apply {
             isCheckable = true
             isChecked = showMasksOnCards
+        }
+        subMenu.addSeparator()
+        subMenu.addItem("Фон: по маске") {
+            cardBackgroundMode = CardBackgroundMode.MASKED
+            refreshObjectGallery(resetPaging = false)
+            rebuildCardFieldsMenu(menuBar)
+        }.apply {
+            isCheckable = true
+            isChecked = cardBackgroundMode == CardBackgroundMode.MASKED
+        }
+        subMenu.addItem("Фон: исходный") {
+            cardBackgroundMode = CardBackgroundMode.ORIGINAL_CROP
+            refreshObjectGallery(resetPaging = false)
+            rebuildCardFieldsMenu(menuBar)
+        }.apply {
+            isCheckable = true
+            isChecked = cardBackgroundMode == CardBackgroundMode.ORIGINAL_CROP
         }
         subMenu.addSeparator()
 
@@ -951,6 +969,9 @@ class MainView : VerticalLayout() {
             cached.properties["mask_crop_file"]?.let { maskFile ->
                 properties["mask_crop_url"] = cacheDir.resolve(maskFile).toString()
             }
+            cached.properties["crop_preview_file"]?.let { cropFile ->
+                properties["crop_preview_url"] = cacheDir.resolve(cropFile).toString()
+            }
             DatasetObject(
                 id = cached.id,
                 name = cached.name,
@@ -1036,6 +1057,9 @@ class MainView : VerticalLayout() {
                 val previewFileName = "grain-$suffix-$grainCounter.png"
                 val previewPath = cacheDir.resolve(previewFileName)
                 Files.write(previewPath, buildMaskedCrop(source, component))
+                val cropPreviewFileName = "grain-crop-$suffix-$grainCounter.png"
+                val cropPreviewPath = cacheDir.resolve(cropPreviewFileName)
+                Files.write(cropPreviewPath, buildUnmaskedCrop(source, component))
                 val maskPreviewFileName = "grain-mask-$suffix-$grainCounter.png"
                 val maskPreviewPath = cacheDir.resolve(maskPreviewFileName)
                 Files.write(maskPreviewPath, buildMaskedCrop(mask, component))
@@ -1057,6 +1081,7 @@ class MainView : VerticalLayout() {
                         "phase_area_shares" to formatPhaseAreaShares(phaseStatistics, legend),
                         "area_px" to phaseStatistics.values.sum().toString(),
                         "mask_crop_file" to maskPreviewFileName,
+                        "crop_preview_file" to cropPreviewFileName,
                         "crop_width" to (component.maxX - component.minX + 1).toString(),
                         "crop_height" to (component.maxY - component.minY + 1).toString()
                     )
@@ -1217,6 +1242,21 @@ class MainView : VerticalLayout() {
         }
     }
 
+    private fun buildUnmaskedCrop(source: BufferedImage, component: ConnectedComponent): ByteArray {
+        val cropWidth = component.maxX - component.minX + 1
+        val cropHeight = component.maxY - component.minY + 1
+        val crop = BufferedImage(cropWidth, cropHeight, BufferedImage.TYPE_INT_ARGB)
+        for (y in 0 until cropHeight) {
+            for (x in 0 until cropWidth) {
+                crop.setRGB(x, y, source.getRGB(component.minX + x, component.minY + y))
+            }
+        }
+        return ByteArrayOutputStream().use { output ->
+            ImageIO.write(crop, "png", output)
+            output.toByteArray()
+        }
+    }
+
     private fun BufferedImage.rgbNoAlpha(x: Int, y: Int): Int = getRGB(x, y) and 0xFFFFFF
 
     private fun parseLegend(legendFile: Path): Map<Int, String> {
@@ -1351,7 +1391,12 @@ class MainView : VerticalLayout() {
         val imageDisplayHeight = max(1.0, rawHeight * scale).roundToInt()
         val cardWidth = max(80.0, imageDisplayWidth.toDouble()).roundToInt()
 
-        val image = Image(obj.previewUrl, obj.name).apply {
+        val previewUrl = if (cardBackgroundMode == CardBackgroundMode.ORIGINAL_CROP) {
+            obj.properties["crop_preview_url"] ?: obj.previewUrl
+        } else {
+            obj.previewUrl
+        }
+        val image = Image(previewUrl, obj.name).apply {
             style["display"] = "block"
             style["width"] = "${imageDisplayWidth}px"
             style["height"] = "${imageDisplayHeight}px"
@@ -2040,6 +2085,11 @@ private enum class ObjectFilter {
     ANALYSIS_DATE,
     REVIEWED,
     AREA
+}
+
+private enum class CardBackgroundMode {
+    MASKED,
+    ORIGINAL_CROP
 }
 
 private fun demoProjects(): List<DatasetProject> = emptyList()
