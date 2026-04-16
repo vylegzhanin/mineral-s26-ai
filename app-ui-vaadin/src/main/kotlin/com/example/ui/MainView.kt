@@ -1414,7 +1414,6 @@ class MainView : VerticalLayout() {
             style["width"] = "${imageDisplayWidth}px"
             style["height"] = "${imageDisplayHeight}px"
             style["object-fit"] = "contain"
-            style["border-radius"] = "10px"
             style["image-rendering"] = "pixelated"
         }
         val imageStack = com.vaadin.flow.component.html.Div(image).apply {
