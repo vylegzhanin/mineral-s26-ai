@@ -106,6 +106,18 @@ class MainView : VerticalLayout() {
         step = 1.0
         setWidth("72px")
     }
+    private val areaFromFilter = NumberField().apply {
+        placeholder = "Пл. от"
+        min = 0.0
+        step = 1.0
+        setWidth("98px")
+    }
+    private val areaToFilter = NumberField().apply {
+        placeholder = "до"
+        min = 0.0
+        step = 1.0
+        setWidth("72px")
+    }
     private val analysisDateFromFilter = DatePicker().apply {
         placeholder = "Дата с"
         setWidth("122px")
@@ -389,6 +401,9 @@ class MainView : VerticalLayout() {
         root.subMenu.addItem("Проверено оператором") { addFilter(ObjectFilter.REVIEWED) }.also {
             filterMenuItems[ObjectFilter.REVIEWED] = it
         }
+        root.subMenu.addItem("Площадь") { addFilter(ObjectFilter.AREA) }.also {
+            filterMenuItems[ObjectFilter.AREA] = it
+        }
         root.element.setProperty("title", "Фильтры")
         styleToolbarMenu(filterAddMenuBar, root)
     }
@@ -472,6 +487,10 @@ class MainView : VerticalLayout() {
                 analysisDateToFilter.clear()
             }
             ObjectFilter.REVIEWED -> reviewedFilter.clear()
+            ObjectFilter.AREA -> {
+                areaFromFilter.clear()
+                areaToFilter.clear()
+            }
         }
         rebuildVisibleFilterControls()
         refreshObjectGallery(resetPaging = true)
@@ -487,6 +506,7 @@ class MainView : VerticalLayout() {
                     ObjectFilter.CONFIDENCE -> compactPairFilterGroup("Уверенность", confidenceFromFilter, confidenceToFilter, filter)
                     ObjectFilter.ANALYSIS_DATE -> compactPairFilterGroup("Дата", analysisDateFromFilter, analysisDateToFilter, filter)
                     ObjectFilter.REVIEWED -> compactFilterGroup("Проверено", reviewedFilter, filter)
+                    ObjectFilter.AREA -> compactPairFilterGroup("Площадь", areaFromFilter, areaToFilter, filter)
                 }
             )
         }
@@ -526,6 +546,8 @@ class MainView : VerticalLayout() {
         statusFilter.clear()
         confidenceFromFilter.clear()
         confidenceToFilter.clear()
+        areaFromFilter.clear()
+        areaToFilter.clear()
         analysisDateFromFilter.clear()
         analysisDateToFilter.clear()
         reviewedFilter.clear()
@@ -545,6 +567,8 @@ class MainView : VerticalLayout() {
         statusFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
         confidenceFromFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
         confidenceToFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
+        areaFromFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
+        areaToFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
         analysisDateFromFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
         analysisDateToFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
         reviewedFilter.addValueChangeListener { refreshObjectGallery(resetPaging = true) }
@@ -619,6 +643,8 @@ class MainView : VerticalLayout() {
         val status = statusFilter.value?.trim().orEmpty()
         val confidenceFrom = confidenceFromFilter.value
         val confidenceTo = confidenceToFilter.value
+        val areaFrom = areaFromFilter.value
+        val areaTo = areaToFilter.value
         val analysisFrom = analysisDateFromFilter.value
         val analysisTo = analysisDateToFilter.value
         val reviewed = reviewedFilter.value
@@ -630,6 +656,10 @@ class MainView : VerticalLayout() {
             val confidence = obj.properties["meta_confidence"]?.toDoubleOrNull()
             if (ObjectFilter.CONFIDENCE in activeFilters && confidenceFrom != null && (confidence == null || confidence < confidenceFrom)) return@filter false
             if (ObjectFilter.CONFIDENCE in activeFilters && confidenceTo != null && (confidence == null || confidence > confidenceTo)) return@filter false
+
+            val area = obj.properties["area_px"]?.toDoubleOrNull()
+            if (ObjectFilter.AREA in activeFilters && areaFrom != null && (area == null || area < areaFrom)) return@filter false
+            if (ObjectFilter.AREA in activeFilters && areaTo != null && (area == null || area > areaTo)) return@filter false
 
             val analysisDate = obj.properties["meta_analysis_date"]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             if (ObjectFilter.ANALYSIS_DATE in activeFilters && analysisFrom != null && (analysisDate == null || analysisDate.isBefore(analysisFrom))) return@filter false
@@ -1025,6 +1055,7 @@ class MainView : VerticalLayout() {
                         "object_phase_type" to objectClassInfo.phaseType,
                         "phase_count" to phaseStatistics.size.toString(),
                         "phase_area_shares" to formatPhaseAreaShares(phaseStatistics, legend),
+                        "area_px" to phaseStatistics.values.sum().toString(),
                         "mask_crop_file" to maskPreviewFileName,
                         "crop_width" to (component.maxX - component.minX + 1).toString(),
                         "crop_height" to (component.maxY - component.minY + 1).toString()
@@ -1439,7 +1470,7 @@ class MainView : VerticalLayout() {
                 val value = rawValueNode.asDouble(Double.NaN)
                 if (value.isNaN()) return@mapNotNull null
                 val percentValue = if (value <= 1.0) value * 100.0 else value
-                val roundedPercent = String.format(Locale.US, "%.1f%%", percentValue)
+                val roundedPercent = String.format(Locale.US, "%.0f%%", percentValue)
                 val phaseColor = colorsByPhase[phaseName]
                     ?.let { normalizeMaskColor(it) }
                     ?.let { "#" + it.removePrefix("0x") }
@@ -1915,9 +1946,10 @@ class MainView : VerticalLayout() {
             style["background"] = "var(--lumo-base-color)"
         }
 
-    private fun prettyLabel(name: String): String = name
-        .replace("_", " ")
-        .replaceFirstChar { it.uppercase() }
+    private fun prettyLabel(name: String): String = when (name) {
+        "area_px" -> "Площадь"
+        else -> name.replace("_", " ").replaceFirstChar { it.uppercase() }
+    }
 
     private fun panel(title: String, content: Component, bodyScrollable: Boolean = true): VerticalLayout =
         panel(H4(title), content, bodyScrollable)
@@ -2006,7 +2038,8 @@ private enum class ObjectFilter {
     STATUS,
     CONFIDENCE,
     ANALYSIS_DATE,
-    REVIEWED
+    REVIEWED,
+    AREA
 }
 
 private fun demoProjects(): List<DatasetProject> = emptyList()
