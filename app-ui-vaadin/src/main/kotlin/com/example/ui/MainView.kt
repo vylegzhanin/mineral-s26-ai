@@ -374,6 +374,8 @@ class MainView : VerticalLayout() {
         filterMenuItems.clear()
 
         val root = filterAddMenuBar.addIconItem(VaadinIcon.FILTER.create())
+        val selectedGrainClasses = grainClassFilter.selectedItems.map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        val grainClassColors = grainClassColorMapForCurrentDataset()
         val grainClassRoot = root.subMenu.addItem("Grain class")
         val grainClasses = selectedProject
             ?.objects
@@ -387,8 +389,12 @@ class MainView : VerticalLayout() {
             grainClassRoot.subMenu.addItem("Нет классов").apply { isEnabled = false }
         } else {
             grainClasses.forEach { grainClass ->
-                grainClassRoot.subMenu.addItem(grainClass) {
+                grainClassRoot.subMenu.addItem(grainClassOptionView(grainClass, grainClassColors[grainClass])) {
                     applyGrainClassQuickFilter(grainClass)
+                    rebuildFilterAddMenu()
+                }.apply {
+                    isCheckable = true
+                    isChecked = grainClass in selectedGrainClasses
                 }
             }
         }
@@ -681,7 +687,7 @@ class MainView : VerticalLayout() {
 
                 if (includesMultiphase) {
                     if (!objectIsMultiphase) return@filter false
-                    if (classTerms.isNotEmpty() && !objectHasAnyPhaseClass(obj, classTerms)) return@filter false
+                    if (classTerms.isNotEmpty() && !objectHasAllPhaseClasses(obj, classTerms)) return@filter false
                 } else {
                     val matchesClass = obj.properties["grain_class"]?.trim() in classTerms
                     val matchesPhaseClass = classTerms.isNotEmpty() && objectHasAnyPhaseClass(obj, classTerms)
@@ -1813,6 +1819,16 @@ class MainView : VerticalLayout() {
         val root = runCatching { jsonMapper.readTree(rawJson) }.getOrNull() ?: return false
         if (!root.isObject) return false
         return root.properties().asSequence().any { (phaseName, _) -> phaseName in classes }
+    }
+
+    private fun objectHasAllPhaseClasses(obj: DatasetObject, classes: Set<String>): Boolean {
+        if (classes.isEmpty()) return true
+        val rawJson = obj.properties["phase_area_shares"].orEmpty().trim()
+        if (rawJson.isBlank()) return false
+        val root = runCatching { jsonMapper.readTree(rawJson) }.getOrNull() ?: return false
+        if (!root.isObject) return false
+        val phases = root.properties().asSequence().map { it.key }.toSet()
+        return classes.all { it in phases }
     }
 
     private fun grainClassOptionView(grainClass: String, rawMaskColor: String?): Component =
