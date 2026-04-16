@@ -927,7 +927,16 @@ class MainView : VerticalLayout() {
         val manifestPath = cacheDir.resolve("manifest.json")
 
         val cachedObjects = if (Files.exists(manifestPath)) loadCachedObjects(manifestPath) else emptyList()
-        val resolvedObjects = if (cachedObjects.isNotEmpty() && cachedObjects.all { Files.exists(cacheDir.resolve(it.previewFileName)) }) {
+        val resolvedObjects = if (
+            cachedObjects.isNotEmpty() &&
+                cachedObjects.all { cached ->
+                    val hasMaskedPreview = Files.exists(cacheDir.resolve(cached.previewFileName))
+                    val hasCropPreview = cached.properties["crop_preview_file"]
+                        ?.let { cropPreviewFile -> Files.exists(cacheDir.resolve(cropPreviewFile)) }
+                        ?: false
+                    hasMaskedPreview && hasCropPreview
+                }
+        ) {
             onProgress(ImportProgress("Загрузка из кэша…", 1, 1, false))
             cachedObjects
         } else {
