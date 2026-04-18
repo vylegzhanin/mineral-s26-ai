@@ -2,6 +2,7 @@ package com.example.edge.ktor
 
 import com.example.contracts.GreetingRequest
 import com.example.contracts.GreetingResponse
+import com.example.edge.ktor.storage.postgres.PostgresStorageBootstrap
 import com.example.kernel.GreetingService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -29,6 +30,12 @@ fun main() {
 fun Application.module() {
     val greetingService = GreetingService()
     val environmentName = System.getenv("KTOR_ENV") ?: "dev"
+    val storage = PostgresStorageBootstrap.initializeFromEnvOrNull()
+    if (storage == null) {
+        log.info("PostgreSQL storage is disabled: APP_DB_URL is not set")
+    } else {
+        log.info("PostgreSQL storage initialized (migrations and repositories are ready)")
+    }
 
     install(CallLogging)
     install(ContentNegotiation) {
@@ -45,7 +52,8 @@ fun Application.module() {
 
     routing {
         get("/health") {
-            call.respondText("OK ($environmentName)", ContentType.Text.Plain)
+            val storageState = if (storage == null) "storage=off" else "storage=postgres"
+            call.respondText("OK ($environmentName, $storageState)", ContentType.Text.Plain)
         }
         post("/api/greet") {
             val request = call.receive<GreetingRequest>()
