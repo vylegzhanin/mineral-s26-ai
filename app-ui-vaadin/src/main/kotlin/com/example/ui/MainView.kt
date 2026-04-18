@@ -1,3 +1,5 @@
+@file:Suppress("removal")
+
 package com.example.ui
 
 import com.vaadin.flow.component.Component
@@ -68,8 +70,8 @@ class MainView : VerticalLayout() {
 
     private val projectHeader = H4("Проекты")
     private val objectHeader = H4("Объекты")
-    private val projectList = com.vaadin.flow.component.html.Div()
-    private val objectGallery = com.vaadin.flow.component.html.Div()
+    private val projectList = Div()
+    private val objectGallery = Div()
     private val activeFilters = linkedSetOf<ObjectFilter>()
     private val filterAddMenuBar = MenuBar()
     private val filterMenuItems = mutableMapOf<ObjectFilter, MenuItem>()
@@ -131,16 +133,16 @@ class MainView : VerticalLayout() {
     }
     private var showMasksOnCards: Boolean = false
     private var cardBackgroundMode: CardBackgroundMode = CardBackgroundMode.MASKED
-    private val propertyEditor = com.vaadin.flow.component.html.Div()
+    private val propertyEditor = Div()
     private val cardFieldsPanelTitle = H4("Поля карточек")
     private val cardFieldsMenuBar = MenuBar()
-    private val cardFieldsPanel = com.vaadin.flow.component.html.Div()
-    private val objectCardsById = mutableMapOf<String, com.vaadin.flow.component.html.Div>()
+    private val cardFieldsPanel = Div()
+    private val objectCardsById = mutableMapOf<String, Div>()
     private val cardVisibleFields = linkedSetOf("phase_area_shares")
     private val cardFieldOrder = mutableListOf<String>()
     private val jsonMapper = ObjectMapper()
     private var draggedCardField: String? = null
-    private var selectedObjectCard: com.vaadin.flow.component.html.Div? = null
+    private var selectedObjectCard: Div? = null
     private var visibleObjectLimit: Int = OBJECT_PAGE_SIZE
 
     private var selectedProject: DatasetProject? = null
@@ -173,11 +175,11 @@ class MainView : VerticalLayout() {
         // 20% | 60% | 20%: настраивается пользователем через drag splitters
         val centerRightSplit = SplitLayout(centerPanel, rightPanel).apply {
             setSizeFull()
-            setSplitterPosition(75.0) // 75% of remaining 80% = 60% of full width
+            splitterPosition = 75.0 // 75% of remaining 80% = 60% of full width
         }
         val rootSplit = SplitLayout(leftPanel, centerRightSplit).apply {
             setSizeFull()
-            setSplitterPosition(20.0)
+            splitterPosition = 20.0
         }
 
         add(rootSplit)
@@ -281,7 +283,7 @@ class MainView : VerticalLayout() {
                 renderObjects(objects)
             }
             objectGallery.add(
-                com.vaadin.flow.component.html.Div(showMoreButton).apply {
+                Div(showMoreButton).apply {
                     style["width"] = "100%"
                     style["padding"] = "8px 4px"
                 }
@@ -344,7 +346,7 @@ class MainView : VerticalLayout() {
             }
         ).apply {
             setWidthFull()
-            setAlignItems(FlexComponent.Alignment.CENTER)
+            alignItems = FlexComponent.Alignment.CENTER
             justifyContentMode = FlexComponent.JustifyContentMode.BETWEEN
             isPadding = false
             isSpacing = true
@@ -356,7 +358,7 @@ class MainView : VerticalLayout() {
             addClickListener { openImportDialog() }
         }).apply {
             setWidthFull()
-            setAlignItems(FlexComponent.Alignment.CENTER)
+            alignItems = FlexComponent.Alignment.CENTER
             justifyContentMode = FlexComponent.JustifyContentMode.BETWEEN
             isPadding = false
             isSpacing = true
@@ -384,7 +386,7 @@ class MainView : VerticalLayout() {
         val rootContent = HorizontalLayout().apply {
             isPadding = false
             isSpacing = false
-            setAlignItems(FlexComponent.Alignment.CENTER)
+            alignItems = FlexComponent.Alignment.CENTER
             style["display"] = "inline-flex"
             style["gap"] = "4px"
             style["width"] = "auto"
@@ -579,7 +581,7 @@ class MainView : VerticalLayout() {
             isPadding = false
             isSpacing = true
             style["gap"] = "4px"
-            setAlignItems(FlexComponent.Alignment.CENTER)
+            alignItems = FlexComponent.Alignment.CENTER
             if (title.isNotBlank()) {
                 add(Span(title))
             }
@@ -591,7 +593,7 @@ class MainView : VerticalLayout() {
             isPadding = false
             isSpacing = true
             style["gap"] = "3px"
-            setAlignItems(FlexComponent.Alignment.CENTER)
+            alignItems = FlexComponent.Alignment.CENTER
         }
 
     private fun removeFilterButton(filter: ObjectFilter): Button =
@@ -1329,7 +1331,6 @@ class MainView : VerticalLayout() {
             .toMap()
     }
 
-    @Suppress("DEPRECATION")
     private fun fileResourceUrl(file: Path): String =
         StreamResource(file.fileName.toString()) { Files.newInputStream(file) }.let { resource ->
             val currentUi = ui.orElseThrow { IllegalStateException("UI context is not available for resource registration.") }
@@ -1422,7 +1423,7 @@ class MainView : VerticalLayout() {
             style["display"] = "block"
         }
 
-        return com.vaadin.flow.component.html.Div(image, com.vaadin.flow.component.html.Div(title, meta)).apply {
+        return Div(image, Div(title, meta)).apply {
             style["display"] = "flex"
             style["align-items"] = "center"
             style["gap"] = "10px"
@@ -1442,7 +1443,7 @@ class MainView : VerticalLayout() {
         visibleFields: List<String>,
         grainClassColors: Map<String, String>,
         onClick: () -> Unit
-    ): com.vaadin.flow.component.html.Div {
+    ): Div {
         val titleColor = obj.properties["mask_color_rgb"]
             ?.removePrefix("0x")
             ?.takeIf { it.length == 6 && it.all { ch -> ch.isDigit() || ch.lowercaseChar() in 'a'..'f' } }
@@ -1468,7 +1469,7 @@ class MainView : VerticalLayout() {
             style["object-fit"] = "contain"
             style["image-rendering"] = "pixelated"
         }
-        val imageStack = com.vaadin.flow.component.html.Div(image).apply {
+        val imageStack = Div(image).apply {
             style["position"] = "relative"
             style["width"] = "${imageDisplayWidth}px"
             style["height"] = "${imageDisplayHeight}px"
@@ -1492,7 +1493,7 @@ class MainView : VerticalLayout() {
             imageStack.add(maskOverlay)
         }
 
-        val titleOverlay = com.vaadin.flow.component.html.Div().apply {
+        val titleOverlay = Div().apply {
             style["position"] = "absolute"
             style["left"] = "0"
             style["right"] = "0"
@@ -1519,7 +1520,7 @@ class MainView : VerticalLayout() {
             titleOverlay.add(overlayText(line.text, line.color))
         }
 
-        return com.vaadin.flow.component.html.Div(imageStack, titleOverlay).apply {
+        return Div(imageStack, titleOverlay).apply {
             style["position"] = "relative"
             style["display"] = "inline-block"
             style["flex"] = "1 0 ${cardWidth}px"
@@ -1857,14 +1858,14 @@ class MainView : VerticalLayout() {
         HorizontalLayout(colorDot(rawMaskColor), Span(grainClass)).apply {
             isPadding = false
             isSpacing = true
-            setAlignItems(FlexComponent.Alignment.CENTER)
+            alignItems = FlexComponent.Alignment.CENTER
             style["gap"] = "8px"
         }
 
     private fun colorDot(rawMaskColor: String?): Component {
         val maskColor = normalizeMaskColor(rawMaskColor)
         val cssHex = if (maskColor == null) "transparent" else "#" + maskColor.removePrefix("0x")
-        return com.vaadin.flow.component.html.Div().apply {
+        return Div().apply {
             style["width"] = "12px"
             style["height"] = "12px"
             style["border-radius"] = "999px"
@@ -1877,7 +1878,7 @@ class MainView : VerticalLayout() {
 
     private fun toolbarColorDot(rawMaskColor: String?): Component {
         val maskColor = normalizeMaskColor(rawMaskColor)
-        return com.vaadin.flow.component.html.Div().apply {
+        return Div().apply {
             style["width"] = "14px"
             style["height"] = "14px"
             style["border-radius"] = "999px"
@@ -1893,7 +1894,7 @@ class MainView : VerticalLayout() {
             .takeIf { it.length == 6 && it.all { ch -> ch.isDigit() || ch.lowercaseChar() in 'a'..'f' } }
             ?.let { "#$it" }
             ?: "#000000"
-        val swatch = com.vaadin.flow.component.html.Div().apply {
+        val swatch = Div().apply {
             style["width"] = "28px"
             style["height"] = "28px"
             style["border-radius"] = "6px"
@@ -1909,7 +1910,7 @@ class MainView : VerticalLayout() {
             isPadding = false
             isSpacing = true
             setWidthFull()
-            setAlignItems(FlexComponent.Alignment.CENTER)
+            alignItems = FlexComponent.Alignment.CENTER
         }
     }
 
@@ -2029,7 +2030,7 @@ class MainView : VerticalLayout() {
                 HorizontalLayout(toggle, Span(prettyLabel(field))).apply {
                     isPadding = false
                     isSpacing = true
-                    setAlignItems(FlexComponent.Alignment.BASELINE)
+                    alignItems = FlexComponent.Alignment.BASELINE
                     style["gap"] = "8px"
                 },
                 dragHandle
@@ -2037,7 +2038,7 @@ class MainView : VerticalLayout() {
                 setWidthFull()
                 isPadding = false
                 isSpacing = true
-                setAlignItems(FlexComponent.Alignment.CENTER)
+                alignItems = FlexComponent.Alignment.CENTER
                 style["justify-content"] = "space-between"
                 style["padding"] = "2px 0"
                 style["border-radius"] = "6px"
@@ -2055,7 +2056,7 @@ class MainView : VerticalLayout() {
                 }
             }
             DropTarget.create(row).apply {
-                setDropEffect(DropEffect.MOVE)
+                dropEffect = DropEffect.MOVE
                 addDropListener {
                     val dragged = draggedCardField ?: return@addDropListener
                     if (dragged == field) return@addDropListener
@@ -2121,7 +2122,7 @@ class MainView : VerticalLayout() {
     )
 
     private fun propertySection(title: String, content: Component): Component =
-        com.vaadin.flow.component.html.Div(
+        Div(
             H5(title).apply {
                 style["margin"] = "0 0 8px 0"
             },
@@ -2138,11 +2139,8 @@ class MainView : VerticalLayout() {
         else -> name.replace("_", " ").replaceFirstChar { it.uppercase() }
     }
 
-    private fun panel(title: String, content: Component, bodyScrollable: Boolean = true): VerticalLayout =
-        panel(H4(title), content, bodyScrollable)
-
     private fun panel(title: Component, content: Component, bodyScrollable: Boolean = true): VerticalLayout {
-        val body = com.vaadin.flow.component.html.Div(content).apply {
+        val body = Div(content).apply {
             setSizeFull()
             style["min-height"] = "0"
             style["overflow"] = if (bodyScrollable) "auto" else "hidden"
@@ -2153,7 +2151,7 @@ class MainView : VerticalLayout() {
             setSizeFull()
             isPadding = true
             isSpacing = false
-            setAlignItems(FlexComponent.Alignment.STRETCH)
+            alignItems = FlexComponent.Alignment.STRETCH
             setFlexGrow(1.0, body)
             style["border"] = "1px solid var(--lumo-contrast-20pct)"
             style["border-radius"] = "10px"
@@ -2233,5 +2231,3 @@ private enum class CardBackgroundMode {
     MASKED,
     ORIGINAL_CROP
 }
-
-private fun demoProjects(): List<DatasetProject> = emptyList()
