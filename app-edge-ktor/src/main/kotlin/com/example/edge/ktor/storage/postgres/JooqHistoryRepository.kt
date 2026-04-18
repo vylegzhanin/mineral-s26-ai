@@ -35,8 +35,8 @@ class JooqHistoryRepository(
             .set(actionScopeType, record.scope.type.name)
             .set(actionScopeId, record.scope.id)
             .set(actionType, record.actionType)
-            .set(actionPayload, JSONB.valueOf(record.payloadJson))
-            .set(actionInversePayload, JSONB.valueOf(record.inversePayloadJson))
+            .set(actionPayload, JSONB.valueOf(JsonbCodec.encode(record.payload)))
+            .set(actionInversePayload, JSONB.valueOf(JsonbCodec.encode(record.inversePayload)))
             .set(actionCreatedAt, record.createdAt)
             .returning(actionId)
             .fetchOne()
@@ -92,8 +92,8 @@ class JooqHistoryRepository(
                 id = record.get(actionScopeId) ?: ""
             ),
             actionType = record.get(actionType) ?: "",
-            payloadJson = record.get(actionPayload)?.data() ?: "{}",
-            inversePayloadJson = record.get(actionInversePayload)?.data() ?: "{}",
+            payload = JsonbCodec.decode(record.get(actionPayload)?.data()),
+            inversePayload = JsonbCodec.decode(record.get(actionInversePayload)?.data()),
             createdAt = record.get(actionCreatedAt) ?: Instant.now()
         )
     }

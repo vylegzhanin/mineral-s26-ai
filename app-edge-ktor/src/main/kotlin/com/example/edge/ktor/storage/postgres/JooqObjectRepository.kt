@@ -28,7 +28,7 @@ class JooqObjectRepository(
             .set(colName, record.name)
             .set(colCategory, record.category)
             .set(colPreviewRef, record.previewRef)
-            .set(colProperties, JSONB.valueOf(record.propertiesJson))
+            .set(colProperties, JSONB.valueOf(JsonbCodec.encode(record.properties)))
             .set(colUpdatedAt, record.updatedAt)
             .onConflict(colId)
             .doUpdate()
@@ -36,7 +36,7 @@ class JooqObjectRepository(
             .set(colName, record.name)
             .set(colCategory, record.category)
             .set(colPreviewRef, record.previewRef)
-            .set(colProperties, JSONB.valueOf(record.propertiesJson))
+            .set(colProperties, JSONB.valueOf(JsonbCodec.encode(record.properties)))
             .set(colUpdatedAt, record.updatedAt)
             .execute()
         record
@@ -64,7 +64,7 @@ class JooqObjectRepository(
             name = r.get(colName) ?: "",
             category = r.get(colCategory),
             previewRef = r.get(colPreviewRef) ?: "",
-            propertiesJson = r.get(colProperties)?.data() ?: "{}",
+            properties = JsonbCodec.decode(r.get(colProperties)?.data()),
             updatedAt = r.get(colUpdatedAt) ?: Instant.now()
         )
     }

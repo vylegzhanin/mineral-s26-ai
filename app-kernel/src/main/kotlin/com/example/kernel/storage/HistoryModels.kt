@@ -1,5 +1,6 @@
 package com.example.kernel.storage
 
+import kotlinx.serialization.json.JsonObject
 import java.time.Instant
 
 enum class HistoryScopeType {
@@ -16,8 +17,8 @@ data class ActionLogRecord(
     val id: Long? = null,
     val scope: HistoryScope,
     val actionType: String,
-    val payloadJson: String,
-    val inversePayloadJson: String,
+    val payload: JsonObject,
+    val inversePayload: JsonObject,
     val createdAt: Instant = Instant.now()
 )
 

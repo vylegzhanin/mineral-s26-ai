@@ -76,6 +76,7 @@ Note: collaboration-engine is intentionally allowed for Vaadin 24.5+ because Vaa
 `app-edge-ktor` now contains an initial PostgreSQL storage bootstrap:
 - Flyway migrations from `app-edge-ktor/src/main/resources/db/migration`
 - jOOQ-based repository implementations for dataset objects and history (undo/redo foundation)
+- JSONB values are encoded/decoded via `kotlinx.serialization` (`JsonObject`) for typed JSON handling
 - HikariCP datasource bootstrap from environment variables
 
 Environment variables:
