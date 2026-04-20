@@ -562,8 +562,8 @@ class MainView : VerticalLayout() {
     private fun openAddObjectsToCollectionDialog(targetCollection: DatasetCollection) {
         val dialog = Dialog()
         val sourceType = ComboBox<String>("Источник").apply {
-            setItems("Проект", "Коллекция")
-            value = "Проект"
+            setItems("Текущий проект", "Коллекция")
+            value = if (selectedProject != null) "Текущий проект" else "Коллекция"
             setWidthFull()
         }
         val addMode = ComboBox<String>("Режим добавления").apply {
@@ -573,28 +573,44 @@ class MainView : VerticalLayout() {
         }
         val sourcePicker = ComboBox<String>("Источник данных").apply { setWidthFull() }
         val objectPicker = MultiSelectListBox<String>().apply { setHeight("220px"); setWidthFull() }
-        val filterField = TextField("grain_class (для фильтра проекта)").apply { setWidthFull(); isVisible = false }
+        val filterField = TextField("grain_class (для текущего проекта)").apply { setWidthFull(); isVisible = false }
 
-        fun sourceDatasets(): List<Pair<String, List<DatasetObject>>> =
+        data class SourceDataset(val key: String, val label: String, val objects: List<DatasetObject>)
+
+        fun sourceDatasets(): List<SourceDataset> =
             if (sourceType.value == "Коллекция") {
-                collections.filter { it.id != targetCollection.id }.map { "Коллекция: ${it.name}" to it.objects }
+                collections
+                    .filter { it.id != targetCollection.id }
+                    .sortedBy { it.name.lowercase() }
+                    .map { SourceDataset(key = "collection:${it.id}", label = "Коллекция: ${it.name}", objects = it.objects) }
             } else {
-                projects.map { "Проект: ${it.name}" to it.objects }
+                selectedProject
+                    ?.let {
+                        listOf(
+                            SourceDataset(
+                                key = "project:${it.id}",
+                                label = "Проект: ${it.name}",
+                                objects = it.objects
+                            )
+                        )
+                    }
+                    .orEmpty()
             }
 
         fun refreshSourceAndObjects() {
             val options = sourceDatasets()
-            sourcePicker.setItems(options.map { it.first })
-            sourcePicker.value = options.firstOrNull()?.first
-            val selectedObjects = options.firstOrNull()?.second.orEmpty()
+            sourcePicker.isVisible = sourceType.value == "Коллекция"
+            sourcePicker.setItems(options.map { it.label })
+            sourcePicker.value = options.firstOrNull()?.label
+            val selectedObjects = options.firstOrNull()?.objects.orEmpty()
             objectPicker.setItems(selectedObjects.map { "${it.id} • ${it.name}" })
-            filterField.isVisible = addMode.value == "Фильтр по проекту" && sourceType.value == "Проект"
+            filterField.isVisible = addMode.value == "Фильтр по проекту" && sourceType.value == "Текущий проект"
         }
 
         sourceType.addValueChangeListener { refreshSourceAndObjects() }
         addMode.addValueChangeListener { refreshSourceAndObjects() }
         sourcePicker.addValueChangeListener {
-            val selected = sourceDatasets().firstOrNull { option -> option.first == sourcePicker.value }?.second.orEmpty()
+            val selected = sourceDatasets().firstOrNull { option -> option.label == sourcePicker.value }?.objects.orEmpty()
             objectPicker.setItems(selected.map { "${it.id} • ${it.name}" })
         }
         refreshSourceAndObjects()
@@ -609,13 +625,17 @@ class MainView : VerticalLayout() {
                 objectPicker,
                 HorizontalLayout(
                     Button("Добавить") {
-                        val source = sourceDatasets().firstOrNull { it.first == sourcePicker.value } ?: return@Button
-                        val sourceObjects = source.second
+                        val source = if (sourceType.value == "Текущий проект") {
+                            sourceDatasets().firstOrNull()
+                        } else {
+                            sourceDatasets().firstOrNull { it.label == sourcePicker.value }
+                        } ?: return@Button notifyWarning("Источник недоступен.")
+                        val sourceObjects = source.objects
                         val chosen = when (addMode.value) {
                             "Целиком" -> sourceObjects
                             "Фильтр по проекту" -> {
-                                if (sourceType.value != "Проект") {
-                                    notifyWarning("Фильтр поддерживается только для проектов.")
+                                if (sourceType.value != "Текущий проект") {
+                                    notifyWarning("Фильтр поддерживается только для текущего проекта.")
                                     return@Button
                                 }
                                 val wantedClass = filterField.value.trim()
@@ -636,7 +656,7 @@ class MainView : VerticalLayout() {
                         val existingIds = targetCollection.objects.map { it.id }.toMutableSet()
                         chosen.forEach { obj ->
                             val copied = obj.copy(
-                                id = "${source.first}:${obj.id}",
+                                id = "${source.key}:${obj.id}",
                                 properties = obj.properties.toMutableMap()
                             )
                             if (copied.id !in existingIds) {
