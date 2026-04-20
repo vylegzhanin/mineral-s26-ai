@@ -589,7 +589,7 @@ class MainView : VerticalLayout() {
                 showError("Выберите коллекцию.")
                 return@Button
             }
-            val sourceClassToColor = classColorMap(project.objects)
+            val sourceClassToColor = classColorMap(objectsForAdd)
             val targetClassToColor = targetCollection.classColors + classColorMap(targetCollection.objects)
             val conflicts = detectClassColorConflicts(sourceClassToColor, targetClassToColor)
 
