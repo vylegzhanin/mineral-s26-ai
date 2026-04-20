@@ -23,9 +23,12 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.splitlayout.SplitLayout
+import com.vaadin.flow.component.tabs.Tab
+import com.vaadin.flow.component.tabs.Tabs
 import com.vaadin.flow.component.textfield.NumberField
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
+import com.vaadin.flow.component.listbox.MultiSelectListBox
 import com.vaadin.flow.data.renderer.ComponentRenderer
 import com.vaadin.flow.dom.Style
 import com.vaadin.flow.component.icon.VaadinIcon
@@ -67,6 +70,7 @@ class MainView : VerticalLayout() {
     private val datasetsRoot: Path = Path.of("/siams/images")
     private val cacheRoot: Path = Path.of("/siams/chache")
     private val projects = mutableListOf<DatasetProject>()
+    private val collections = mutableListOf<DatasetCollection>()
 
     private val projectHeader = H4("Проекты")
     private val objectHeader = H4("Объекты")
@@ -146,7 +150,14 @@ class MainView : VerticalLayout() {
     private var visibleObjectLimit: Int = OBJECT_PAGE_SIZE
 
     private var selectedProject: DatasetProject? = null
+    private var selectedCollection: DatasetCollection? = null
     private var selectedObject: DatasetObject? = null
+    private var browseMode: BrowseMode = BrowseMode.PROJECTS
+    private val projectsTab = Tab("Проекты")
+    private val collectionsTab = Tab("Коллекции")
+    private val leftPrimaryActionButton = Button("Импорт")
+    private val leftSecondaryActionButton = Button("Действия")
+    private val browseTabs = Tabs(projectsTab, collectionsTab)
 
     init {
         setSizeFull()
@@ -160,7 +171,7 @@ class MainView : VerticalLayout() {
         configurePropertyEditor()
         initFilterListeners()
 
-        val leftPanel = panel(projectHeaderWithActions(), projectList)
+        val leftPanel = panel(leftHeader(), projectList)
         val centerPanel = panel(objectHeaderWithFilters(), objectGallery).apply {
             style["padding-left"] = "0"
         }
@@ -185,7 +196,7 @@ class MainView : VerticalLayout() {
         add(rootSplit)
         expand(rootSplit)
 
-        renderProjects()
+        renderLeftItems()
         projects.firstOrNull()?.let { selectProject(it) }
     }
 
@@ -227,11 +238,26 @@ class MainView : VerticalLayout() {
     }
 
     private fun selectProject(project: DatasetProject) {
+        browseMode = BrowseMode.PROJECTS
         selectedProject = project
+        selectedCollection = null
         selectedObject = null
         selectedObjectCard = null
-        renderProjects()
+        renderLeftItems()
         refreshFilterOptions(project.objects)
+        refreshObjectGallery(resetPaging = true)
+        rebuildCardFieldsMenu(cardFieldsMenuBar)
+        updateRightPanel()
+    }
+
+    private fun selectCollection(collection: DatasetCollection) {
+        browseMode = BrowseMode.COLLECTIONS
+        selectedCollection = collection
+        selectedProject = null
+        selectedObject = null
+        selectedObjectCard = null
+        renderLeftItems()
+        refreshFilterOptions(collection.objects)
         refreshObjectGallery(resetPaging = true)
         rebuildCardFieldsMenu(cardFieldsMenuBar)
         updateRightPanel()
@@ -300,6 +326,15 @@ class MainView : VerticalLayout() {
         }
     }
 
+    private fun renderLeftItems() {
+        renderProjectsAndCollectionsTabs()
+        if (browseMode == BrowseMode.PROJECTS) {
+            renderProjects()
+        } else {
+            renderCollections()
+        }
+    }
+
     private fun renderProjects() {
         projectHeader.text = "Проекты (${projects.size})"
         projectList.removeAll()
@@ -317,6 +352,18 @@ class MainView : VerticalLayout() {
             groupedProjects.forEach { project ->
                 projectList.add(projectCard(project, project == selectedProject) { selectProject(project) })
             }
+        }
+    }
+
+    private fun renderCollections() {
+        projectHeader.text = "Коллекции (${collections.size})"
+        projectList.removeAll()
+        if (collections.isEmpty()) {
+            projectList.add(Paragraph("Пока нет коллекций. Создайте новую коллекцию."))
+            return
+        }
+        collections.sortedBy { it.name.lowercase() }.forEach { collection ->
+            projectList.add(collectionCard(collection, collection == selectedCollection) { selectCollection(collection) })
         }
     }
 
@@ -353,16 +400,345 @@ class MainView : VerticalLayout() {
             style["padding-left"] = "12px"
         }
 
-    private fun projectHeaderWithActions(): Component =
-        HorizontalLayout(projectHeader, Button("Импорт").apply {
-            addClickListener { openImportDialog() }
-        }).apply {
+    private fun leftHeader(): Component =
+        VerticalLayout(
+            browseTabs.apply {
+                selectedTab = if (browseMode == BrowseMode.PROJECTS) projectsTab else collectionsTab
+                addSelectedChangeListener {
+                    browseMode = if (it.selectedTab == collectionsTab) BrowseMode.COLLECTIONS else BrowseMode.PROJECTS
+                    renderLeftItems()
+                    ensureSelectionForCurrentMode()
+                    refreshObjectGallery(resetPaging = true)
+                }
+            },
+            HorizontalLayout(
+                projectHeader,
+                leftPrimaryActionButton.apply {
+                    addClickListener {
+                        if (browseMode == BrowseMode.PROJECTS) openImportDialog() else openCreateCollectionDialog()
+                    }
+                },
+                leftSecondaryActionButton.apply {
+                    addClickListener { openCollectionActionsDialog() }
+                }
+            ).apply {
+                setWidthFull()
+                alignItems = FlexComponent.Alignment.CENTER
+                justifyContentMode = FlexComponent.JustifyContentMode.BETWEEN
+                isPadding = false
+                isSpacing = true
+            }
+        ).apply {
             setWidthFull()
-            alignItems = FlexComponent.Alignment.CENTER
-            justifyContentMode = FlexComponent.JustifyContentMode.BETWEEN
             isPadding = false
-            isSpacing = true
+            isSpacing = false
         }
+
+    private fun renderProjectsAndCollectionsTabs() {
+        projectsTab.isEnabled = true
+        collectionsTab.isEnabled = true
+        browseTabs.selectedTab = if (browseMode == BrowseMode.PROJECTS) projectsTab else collectionsTab
+        leftPrimaryActionButton.text = if (browseMode == BrowseMode.PROJECTS) "Импорт" else "Новая"
+        leftSecondaryActionButton.isVisible = browseMode == BrowseMode.COLLECTIONS
+    }
+
+    private fun ensureSelectionForCurrentMode() {
+        when (browseMode) {
+            BrowseMode.PROJECTS -> {
+                if (selectedProject == null) projects.firstOrNull()?.let { selectProject(it) }
+                if (selectedProject == null) {
+                    selectedCollection = null
+                    refreshFilterOptions(emptyList())
+                }
+            }
+            BrowseMode.COLLECTIONS -> {
+                if (selectedCollection == null) collections.firstOrNull()?.let { selectCollection(it) }
+                if (selectedCollection == null) {
+                    selectedProject = null
+                    refreshFilterOptions(emptyList())
+                }
+            }
+        }
+    }
+
+    private fun openCreateCollectionDialog() {
+        val dialog = Dialog()
+        val nameField = TextField("Имя коллекции").apply {
+            isClearButtonVisible = true
+            setWidthFull()
+        }
+        dialog.add(
+            VerticalLayout(
+                H4("Новая коллекция"),
+                nameField,
+                HorizontalLayout(
+                    Button("Создать") {
+                        val name = nameField.value.trim()
+                        if (name.isBlank()) {
+                            notifyWarning("Введите имя коллекции.")
+                            return@Button
+                        }
+                        if (collections.any { it.name.equals(name, ignoreCase = true) }) {
+                            notifyWarning("Коллекция с таким именем уже существует.")
+                            return@Button
+                        }
+                        val collection = DatasetCollection(
+                            id = "collection-${System.currentTimeMillis()}",
+                            name = name,
+                            objects = mutableListOf(),
+                            classColorByName = mutableMapOf()
+                        )
+                        collections.add(collection)
+                        browseMode = BrowseMode.COLLECTIONS
+                        selectCollection(collection)
+                        dialog.close()
+                    },
+                    Button("Отмена") { dialog.close() }
+                )
+            ).apply {
+                isPadding = true
+                setWidth("420px")
+            }
+        )
+        dialog.open()
+    }
+
+    private fun openCollectionActionsDialog() {
+        val collection = selectedCollection ?: run {
+            notifyWarning("Выберите коллекцию.")
+            return
+        }
+        val dialog = Dialog()
+        dialog.add(
+            VerticalLayout(
+                H4("Коллекция: ${collection.name}"),
+                Button("Переименовать") {
+                    dialog.close()
+                    openRenameCollectionDialog(collection)
+                },
+                Button("Удалить") {
+                    collections.removeIf { it.id == collection.id }
+                    if (selectedCollection?.id == collection.id) selectedCollection = null
+                    ensureSelectionForCurrentMode()
+                    renderLeftItems()
+                    refreshObjectGallery(resetPaging = true)
+                    dialog.close()
+                },
+                Button("Добавить объекты") {
+                    dialog.close()
+                    openAddObjectsToCollectionDialog(collection)
+                },
+                Button("Закрыть") { dialog.close() }
+            ).apply { setWidth("360px") }
+        )
+        dialog.open()
+    }
+
+    private fun openRenameCollectionDialog(collection: DatasetCollection) {
+        val dialog = Dialog()
+        val nameField = TextField("Имя").apply { value = collection.name; setWidthFull() }
+        dialog.add(
+            VerticalLayout(
+                H4("Переименование коллекции"),
+                nameField,
+                HorizontalLayout(
+                    Button("Сохранить") {
+                        val newName = nameField.value.trim()
+                        if (newName.isBlank()) return@Button notifyWarning("Имя не может быть пустым.")
+                        if (collections.any { it.id != collection.id && it.name.equals(newName, true) }) {
+                            return@Button notifyWarning("Коллекция с таким именем уже существует.")
+                        }
+                        collection.name = newName
+                        renderLeftItems()
+                        dialog.close()
+                    },
+                    Button("Отмена") { dialog.close() }
+                )
+            ).apply { setWidth("420px") }
+        )
+        dialog.open()
+    }
+
+    private fun openAddObjectsToCollectionDialog(targetCollection: DatasetCollection) {
+        val dialog = Dialog()
+        val sourceType = ComboBox<String>("Источник").apply {
+            setItems("Текущий проект", "Коллекция")
+            value = if (selectedProject != null) "Текущий проект" else "Коллекция"
+            setWidthFull()
+        }
+        val addMode = ComboBox<String>("Режим добавления").apply {
+            setItems("Индивидуально", "Целиком", "Фильтр по проекту")
+            value = "Индивидуально"
+            setWidthFull()
+        }
+        val sourcePicker = ComboBox<String>("Источник данных").apply { setWidthFull() }
+        val objectPicker = MultiSelectListBox<String>().apply { setHeight("220px"); setWidthFull() }
+        val filterField = TextField("grain_class (для текущего проекта)").apply { setWidthFull(); isVisible = false }
+
+        data class SourceDataset(val key: String, val label: String, val objects: List<DatasetObject>)
+
+        fun sourceDatasets(): List<SourceDataset> =
+            if (sourceType.value == "Коллекция") {
+                collections
+                    .filter { it.id != targetCollection.id }
+                    .sortedBy { it.name.lowercase() }
+                    .map { SourceDataset(key = "collection:${it.id}", label = "Коллекция: ${it.name}", objects = it.objects) }
+            } else {
+                selectedProject
+                    ?.let {
+                        listOf(
+                            SourceDataset(
+                                key = "project:${it.id}",
+                                label = "Проект: ${it.name}",
+                                objects = it.objects
+                            )
+                        )
+                    }
+                    .orEmpty()
+            }
+
+        fun refreshSourceAndObjects() {
+            val options = sourceDatasets()
+            sourcePicker.isVisible = sourceType.value == "Коллекция"
+            sourcePicker.setItems(options.map { it.label })
+            sourcePicker.value = options.firstOrNull()?.label
+            val selectedObjects = options.firstOrNull()?.objects.orEmpty()
+            objectPicker.setItems(selectedObjects.map { "${it.id} • ${it.name}" })
+            filterField.isVisible = addMode.value == "Фильтр по проекту" && sourceType.value == "Текущий проект"
+        }
+
+        sourceType.addValueChangeListener { refreshSourceAndObjects() }
+        addMode.addValueChangeListener { refreshSourceAndObjects() }
+        sourcePicker.addValueChangeListener {
+            val selected = sourceDatasets().firstOrNull { option -> option.label == sourcePicker.value }?.objects.orEmpty()
+            objectPicker.setItems(selected.map { "${it.id} • ${it.name}" })
+        }
+        refreshSourceAndObjects()
+
+        dialog.add(
+            VerticalLayout(
+                H4("Добавление в коллекцию"),
+                sourceType,
+                addMode,
+                sourcePicker,
+                filterField,
+                objectPicker,
+                HorizontalLayout(
+                    Button("Добавить") {
+                        val source = if (sourceType.value == "Текущий проект") {
+                            sourceDatasets().firstOrNull()
+                        } else {
+                            sourceDatasets().firstOrNull { it.label == sourcePicker.value }
+                        } ?: return@Button notifyWarning("Источник недоступен.")
+                        val sourceObjects = source.objects
+                        val chosen = when (addMode.value) {
+                            "Целиком" -> sourceObjects
+                            "Фильтр по проекту" -> {
+                                if (sourceType.value != "Текущий проект") {
+                                    notifyWarning("Фильтр поддерживается только для текущего проекта.")
+                                    return@Button
+                                }
+                                val wantedClass = filterField.value.trim()
+                                sourceObjects.filter { it.properties["grain_class"]?.trim().orEmpty() == wantedClass }
+                            }
+                            else -> {
+                                val selectedRows = objectPicker.selectedItems
+                                sourceObjects.filter { candidate -> "${candidate.id} • ${candidate.name}" in selectedRows }
+                            }
+                        }
+                        if (chosen.isEmpty()) return@Button notifyWarning("Нет объектов для добавления.")
+                        val conflicts = detectClassConflicts(targetCollection, chosen)
+                        if (conflicts.isNotEmpty()) {
+                            notifyError("Конфликт классов: ${conflicts.joinToString("; ")}")
+                            return@Button
+                        }
+                        mergeClassPalette(targetCollection, chosen)
+                        val existingIds = targetCollection.objects.map { it.id }.toMutableSet()
+                        chosen.forEach { obj ->
+                            val copied = obj.copy(
+                                id = "${source.key}:${obj.id}",
+                                properties = obj.properties.toMutableMap()
+                            )
+                            if (copied.id !in existingIds) {
+                                targetCollection.objects.add(copied)
+                                existingIds.add(copied.id)
+                            }
+                        }
+                        if (selectedCollection?.id == targetCollection.id) {
+                            refreshFilterOptions(targetCollection.objects)
+                            refreshObjectGallery(resetPaging = true)
+                        }
+                        renderLeftItems()
+                        dialog.close()
+                    },
+                    Button("Отмена") { dialog.close() }
+                )
+            ).apply { setWidth("640px") }
+        )
+        dialog.open()
+    }
+
+    private fun detectClassConflicts(collection: DatasetCollection, sourceObjects: List<DatasetObject>): List<String> {
+        val issues = mutableListOf<String>()
+        val existing = collection.classColorByName
+        val colorToName = existing.entries.associate { it.value to it.key }.toMutableMap()
+        sourceClassColorMap(sourceObjects).forEach { (name, color) ->
+            val existingColor = existing[name]
+            if (existingColor != null && existingColor != color) {
+                issues += "класс '$name' имеет цвет $existingColor, а в источнике $color"
+            }
+            val existingNameByColor = colorToName[color]
+            if (existingNameByColor != null && existingNameByColor != name) {
+                issues += "цвет $color уже закреплен за классом '$existingNameByColor', источник: '$name'"
+            }
+        }
+        return issues.distinct()
+    }
+
+    private fun mergeClassPalette(collection: DatasetCollection, sourceObjects: List<DatasetObject>) {
+        sourceClassColorMap(sourceObjects).forEach { (name, color) ->
+            collection.classColorByName.putIfAbsent(name, color)
+        }
+    }
+
+    private fun sourceClassColorMap(objects: List<DatasetObject>): Map<String, String> =
+        objects.mapNotNull { obj ->
+            val name = obj.properties["grain_class"]?.trim().orEmpty()
+            val color = normalizeMaskColor(obj.properties["mask_color_rgb"]).orEmpty()
+            if (name.isBlank() || color.isBlank()) null else name to color
+        }.toMap()
+
+    private fun collectionCard(collection: DatasetCollection, selected: Boolean, onClick: () -> Unit): Component =
+        Div(
+            Div(
+                Span(collection.name).apply { style["font-weight"] = "600" },
+                Span("Объектов: ${collection.objects.size} • Классов: ${collection.classColorByName.size}").apply {
+                    style["color"] = "var(--lumo-secondary-text-color)"
+                    style["font-size"] = "var(--lumo-font-size-s)"
+                }
+            ).apply {
+                style["display"] = "flex"
+                style["flex-direction"] = "column"
+                style["gap"] = "4px"
+            }
+        ).apply {
+            style["padding"] = "10px"
+            style["border-radius"] = "10px"
+            style["background"] = "var(--lumo-base-color)"
+            style["cursor"] = "pointer"
+            style["box-shadow"] = "var(--lumo-box-shadow-xs)"
+            styleSelection(selected, style)
+            addClickListener { onClick() }
+        }
+
+    private fun notifyWarning(message: String) {
+        Notification.show(message, 3500, Notification.Position.BOTTOM_END)
+    }
+
+    private fun notifyError(message: String) {
+        Notification.show(message, 6000, Notification.Position.BOTTOM_END)
+            .addThemeVariants(NotificationVariant.LUMO_ERROR)
+    }
 
     private fun filterAddMenu(): MenuBar =
         filterAddMenuBar.apply {
@@ -660,8 +1036,8 @@ class MainView : VerticalLayout() {
     }
 
     private fun refreshObjectGallery(resetPaging: Boolean = false) {
-        val project = selectedProject ?: return
-        val filteredObjects = applyFilters(project.objects)
+        val selectedObjects = currentObjects()
+        val filteredObjects = applyFilters(selectedObjects)
         if (resetPaging) {
             visibleObjectLimit = minOf(OBJECT_PAGE_SIZE, filteredObjects.size)
         } else {
@@ -674,7 +1050,7 @@ class MainView : VerticalLayout() {
             updateRightPanel()
         }
 
-        objectHeader.text = "Объекты (${filteredObjects.size}/${project.objects.size})"
+        objectHeader.text = "Объекты (${filteredObjects.size}/${selectedObjects.size})"
         renderObjects(filteredObjects)
         selectedObject?.let { selected ->
             if (filteredObjects.any { it.id == selected.id }) {
@@ -689,6 +1065,12 @@ class MainView : VerticalLayout() {
             "this.scrollIntoView({block:'nearest', inline:'nearest', behavior:'smooth'});"
         )
     }
+
+    private fun currentObjects(): List<DatasetObject> =
+        when (browseMode) {
+            BrowseMode.PROJECTS -> selectedProject?.objects.orEmpty()
+            BrowseMode.COLLECTIONS -> selectedCollection?.objects.orEmpty()
+        }
 
     private fun applyFilters(objects: List<DatasetObject>): List<DatasetObject> {
         val selectedClassFilters = selectedGrainClasses.toSet()
@@ -870,7 +1252,7 @@ class MainView : VerticalLayout() {
                     val projectWithResources = resolveProjectResources(project)
                     projects.removeAll { it.id == projectWithResources.id }
                     projects.add(0, projectWithResources)
-                    renderProjects()
+                    renderLeftItems()
                     dialog.close()
                     Notification.show(
                         "Импортировано: ${projectWithResources.name}. Откройте проект для просмотра объектов.",
@@ -1721,7 +2103,7 @@ class MainView : VerticalLayout() {
                 obj.properties["mask_color_rgb"] = nativeMaskColor
             }
             applyColorIconToCombo(editor, obj.properties["mask_color_rgb"])
-            selectedProject?.let { refreshFilterOptions(it.objects) }
+            refreshFilterOptions(currentObjects())
             val activeFilterValues = selectedGrainClasses.toMutableSet()
             val shouldKeepEditedObjectVisible =
                 ObjectFilter.GRAIN_CLASS in activeFilters &&
@@ -1771,13 +2153,11 @@ class MainView : VerticalLayout() {
     }
 
     private fun grainClassOptionsForCurrentDataset(currentValue: String): List<String> {
-        val datasetOptions = selectedProject
-            ?.objects
-            ?.mapNotNull { it.properties["grain_class"]?.trim() }
-            ?.filter { it.isNotBlank() && it != MULTIPHASE_CLASS_NAME }
-            ?.distinct()
-            ?.sorted()
-            .orEmpty()
+        val datasetOptions = currentObjects()
+            .mapNotNull { it.properties["grain_class"]?.trim() }
+            .filter { it.isNotBlank() && it != MULTIPHASE_CLASS_NAME }
+            .distinct()
+            .sorted()
 
         return (datasetOptions + currentValue.trim())
             .filter { it.isNotBlank() }
@@ -1786,16 +2166,14 @@ class MainView : VerticalLayout() {
     }
 
     private fun grainClassColorMapForCurrentDataset(): Map<String, String> =
-        selectedProject
-            ?.objects
-            ?.mapNotNull { candidate ->
+        currentObjects()
+            .mapNotNull { candidate ->
                 val grainClass = candidate.properties["grain_class"]?.trim().orEmpty()
                 val maskColor = normalizeMaskColor(candidate.properties["mask_color_rgb"]).orEmpty()
                 if (grainClass.isBlank() || maskColor.isBlank()) return@mapNotNull null
                 grainClass to maskColor
             }
-            ?.toMap()
-            .orEmpty()
+            .toMap()
 
     private fun normalizeMaskColor(rawColor: String?): String? {
         val clean = rawColor
@@ -1923,7 +2301,7 @@ class MainView : VerticalLayout() {
             addValueChangeListener { event ->
                 obj.properties[name] = event.value ?: ""
                 if (name == "grain_class") {
-                    selectedProject?.let { refreshFilterOptions(it.objects) }
+                    refreshFilterOptions(currentObjects())
                 }
                 refreshCardsIfOverlayDependsOn(name)
             }
@@ -1931,7 +2309,7 @@ class MainView : VerticalLayout() {
                 obj.properties[name] = event.detail
                 this.value = event.detail
                 if (name == "grain_class") {
-                    selectedProject?.let { refreshFilterOptions(it.objects) }
+                    refreshFilterOptions(currentObjects())
                 }
                 refreshCardsIfOverlayDependsOn(name)
             }
@@ -1957,7 +2335,7 @@ class MainView : VerticalLayout() {
             value = obj.properties["meta_status"] ?: "Черновик"
             addValueChangeListener {
                 obj.properties["meta_status"] = it.value ?: ""
-                selectedProject?.let { project -> refreshFilterOptions(project.objects) }
+                refreshFilterOptions(currentObjects())
                 refreshObjectGallery(resetPaging = false)
             }
         }
@@ -2080,13 +2458,11 @@ class MainView : VerticalLayout() {
     }
 
     private fun availableCardFieldsForPanel(): List<String> {
-        val projectFields = selectedProject
-            ?.objects
-            ?.asSequence()
-            ?.flatMap { it.properties.keys.asSequence() }
-            ?.filterNot { it == "mask_color_rgb" }
-            ?.toSet()
-            .orEmpty()
+        val projectFields = currentObjects()
+            .asSequence()
+            .flatMap { it.properties.keys.asSequence() }
+            .filterNot { it == "mask_color_rgb" }
+            .toSet()
 
         val advancedFields = setOf("meta_status", "meta_confidence", "meta_analysis_date", "meta_reviewed")
         return (projectFields + advancedFields + setOf("grain_class", "phase_area_shares"))
@@ -2171,6 +2547,13 @@ private data class DatasetProject(
     val objects: List<DatasetObject>
 )
 
+private data class DatasetCollection(
+    val id: String,
+    var name: String,
+    val objects: MutableList<DatasetObject>,
+    val classColorByName: MutableMap<String, String>
+)
+
 private data class DatasetObject(
     val id: String,
     val name: String,
@@ -2230,4 +2613,9 @@ private enum class ObjectFilter {
 private enum class CardBackgroundMode {
     MASKED,
     ORIGINAL_CROP
+}
+
+private enum class BrowseMode {
+    PROJECTS,
+    COLLECTIONS
 }
