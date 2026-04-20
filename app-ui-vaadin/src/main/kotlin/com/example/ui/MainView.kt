@@ -589,7 +589,13 @@ class MainView : VerticalLayout() {
                 showError("Выберите коллекцию.")
                 return@Button
             }
-            val sourceClassToColor = classColorMap(objectsForAdd)
+            val sourceProjectClassColors = classColorMap(project.objects)
+            val sourceClassToColor = classNamesInObjects(objectsForAdd)
+                .mapNotNull { className ->
+                    val color = sourceProjectClassColors[className] ?: return@mapNotNull null
+                    className to color
+                }
+                .toMap()
             val targetClassToColor = targetCollection.classColors + classColorMap(targetCollection.objects)
             val conflicts = detectClassColorConflicts(sourceClassToColor, targetClassToColor)
 
@@ -1942,6 +1948,26 @@ class MainView : VerticalLayout() {
                 grainClass to color
             }
             .toMap()
+
+    private fun classNamesInObjects(objects: List<DatasetObject>): Set<String> {
+        val directClasses = objects
+            .mapNotNull { it.properties["grain_class"]?.trim() }
+            .filter { it.isNotBlank() }
+            .toMutableSet()
+
+        objects.forEach { obj ->
+            val rawJson = obj.properties["phase_area_shares"].orEmpty().trim()
+            if (rawJson.isBlank()) return@forEach
+            val root = runCatching { jsonMapper.readTree(rawJson) }.getOrNull() ?: return@forEach
+            if (!root.isObject) return@forEach
+            root.properties().forEach { (phaseName, _) ->
+                val clean = phaseName.trim()
+                if (clean.isNotBlank()) directClasses.add(clean)
+            }
+        }
+        directClasses.remove(MULTIPHASE_CLASS_NAME)
+        return directClasses
+    }
 
     private fun showError(message: String) {
         Notification.show(message, 4500, Notification.Position.MIDDLE).addThemeVariants(NotificationVariant.LUMO_ERROR)
