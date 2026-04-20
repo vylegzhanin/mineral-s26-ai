@@ -145,6 +145,7 @@ class MainView : VerticalLayout() {
     private val cardFieldsMenuBar = MenuBar()
     private val cardFieldsPanel = Div()
     private val objectCardsById = mutableMapOf<String, Div>()
+    private val selectedObjectIds = linkedSetOf<String>()
     private val cardVisibleFields = linkedSetOf("phase_area_shares")
     private val cardFieldOrder = mutableListOf<String>()
     private val jsonMapper = ObjectMapper()
@@ -176,6 +177,7 @@ class MainView : VerticalLayout() {
     private var selectedProject: DatasetProject? = null
     private var selectedCollection: DatasetCollection? = null
     private var selectedObject: DatasetObject? = null
+    private var lastSelectedObjectId: String? = null
 
     init {
         setSizeFull()
@@ -302,6 +304,8 @@ class MainView : VerticalLayout() {
     private fun refreshCurrentSelection() {
         selectedObject = null
         selectedObjectCard = null
+        selectedObjectIds.clear()
+        lastSelectedObjectId = null
         addToCollectionButton.isVisible = leftPanelMode == LeftPanelMode.PROJECTS
         rebuildLeftPanelActions()
         renderProjects()
@@ -312,15 +316,20 @@ class MainView : VerticalLayout() {
     }
 
     private fun selectObject(obj: DatasetObject) {
-        selectedObject = obj
-        updateObjectSelection(obj)
+        selectedObjectIds.clear()
+        selectedObjectIds.add(obj.id)
+        lastSelectedObjectId = obj.id
+        syncSelectedObjectState()
+        updateObjectSelection()
         updateRightPanel()
     }
 
     private fun clearSelectedObject() {
+        selectedObjectIds.clear()
         selectedObject = null
-        selectedObjectCard?.let { styleObjectSelection(false, it.style) }
         selectedObjectCard = null
+        lastSelectedObjectId = null
+        updateObjectSelection()
         updateRightPanel()
     }
 
@@ -347,15 +356,11 @@ class MainView : VerticalLayout() {
         val visibleCardFields = orderedVisibleCardFields()
         val grainClassColors = grainClassColorMapForCurrentDataset()
         visibleObjects.forEach { obj ->
-            val card = objectCard(obj, obj == selectedObject, visibleCardFields, grainClassColors) {
-                if (selectedObject?.id == obj.id) {
-                    clearSelectedObject()
-                } else {
-                    selectObject(obj)
-                }
+            val card = objectCard(obj, obj.id in selectedObjectIds, visibleCardFields, grainClassColors) { clickEvent ->
+                handleObjectCardClick(obj, objects, clickEvent.isCtrlKey, clickEvent.isShiftKey)
             }
             objectCardsById[obj.id] = card
-            if (obj == selectedObject) {
+            if (obj.id in selectedObjectIds) {
                 selectedObjectCard = card
             }
             objectGallery.add(card)
@@ -375,13 +380,52 @@ class MainView : VerticalLayout() {
         }
     }
 
-    private fun updateObjectSelection(obj: DatasetObject) {
-        selectedObjectCard?.let { styleObjectSelection(false, it.style) }
-        val newCard = objectCardsById[obj.id]
-        if (newCard != null) {
-            styleObjectSelection(true, newCard.style)
-            selectedObjectCard = newCard
+    private fun handleObjectCardClick(obj: DatasetObject, visibleObjects: List<DatasetObject>, ctrlKey: Boolean, shiftKey: Boolean) {
+        val updated = selectedObjectIds.toMutableSet()
+        if (shiftKey && lastSelectedObjectId != null) {
+            val start = visibleObjects.indexOfFirst { it.id == lastSelectedObjectId }
+            val end = visibleObjects.indexOfFirst { it.id == obj.id }
+            if (start >= 0 && end >= 0) {
+                val range = if (start <= end) visibleObjects.subList(start, end + 1) else visibleObjects.subList(end, start + 1)
+                if (!ctrlKey) updated.clear()
+                updated.addAll(range.map { it.id })
+            } else {
+                if (!ctrlKey) updated.clear()
+                updated.add(obj.id)
+            }
+        } else if (ctrlKey) {
+            if (!updated.add(obj.id)) updated.remove(obj.id)
+            lastSelectedObjectId = obj.id
+        } else {
+            if (updated.size == 1 && obj.id in updated) {
+                updated.clear()
+                lastSelectedObjectId = null
+            } else {
+                updated.clear()
+                updated.add(obj.id)
+                lastSelectedObjectId = obj.id
+            }
         }
+        selectedObjectIds.clear()
+        selectedObjectIds.addAll(updated)
+        syncSelectedObjectState()
+        updateObjectSelection()
+        updateRightPanel()
+    }
+
+    private fun syncSelectedObjectState() {
+        selectedObject = if (selectedObjectIds.size == 1) {
+            activeObjects().firstOrNull { it.id == selectedObjectIds.first() }
+        } else {
+            null
+        }
+    }
+
+    private fun updateObjectSelection() {
+        objectCardsById.forEach { (id, card) ->
+            styleObjectSelection(id in selectedObjectIds, card.style)
+        }
+        selectedObjectCard = selectedObjectIds.firstOrNull()?.let { objectCardsById[it] }
     }
 
     private fun renderProjects() {
@@ -502,7 +546,9 @@ class MainView : VerticalLayout() {
             return
         }
         val filteredObjects = applyFilters(project.objects)
-        if (filteredObjects.isEmpty()) {
+        val selectedObjects = filteredObjects.filter { it.id in selectedObjectIds }
+        val objectsForAdd = if (selectedObjects.isNotEmpty()) selectedObjects else filteredObjects
+        if (objectsForAdd.isEmpty()) {
             showError("Нет объектов, подходящих под текущие фильтры.")
             return
         }
@@ -523,7 +569,7 @@ class MainView : VerticalLayout() {
             headerTitle = "Добавить в коллекцию"
             add(
                 VerticalLayout(
-                    Paragraph("Будут добавлены ${filteredObjects.size} объектов из проекта \"${project.name}\"."),
+                    Paragraph("Будут добавлены ${objectsForAdd.size} объектов из проекта \"${project.name}\"."),
                     collectionPicker,
                     autoCollectionHint
                 ).apply {
@@ -548,7 +594,7 @@ class MainView : VerticalLayout() {
             val conflicts = detectClassColorConflicts(sourceClassToColor, targetClassToColor)
 
             fun executeMerge(resolvedSourceColors: Map<String, String>) {
-                val mergeResult = mergeProjectObjectsIntoCollection(project, targetCollection, filteredObjects, resolvedSourceColors)
+                val mergeResult = mergeProjectObjectsIntoCollection(project, targetCollection, objectsForAdd, resolvedSourceColors)
                 if (!mergeResult.success) {
                     showError(mergeResult.message)
                     return
@@ -1058,17 +1104,18 @@ class MainView : VerticalLayout() {
             visibleObjectLimit = minOf(max(visibleObjectLimit, OBJECT_PAGE_SIZE), filteredObjects.size)
         }
 
-        if (selectedObject != null && filteredObjects.none { it.id == selectedObject?.id }) {
-            selectedObject = null
+        selectedObjectIds.retainAll(filteredObjects.map { it.id }.toSet())
+        syncSelectedObjectState()
+        if (selectedObjectIds.isEmpty()) {
             selectedObjectCard = null
             updateRightPanel()
         }
 
         objectHeader.text = "Объекты (${filteredObjects.size}/${allObjects.size}) • ${activeSelectionTitle()}"
         renderObjects(filteredObjects)
-        selectedObject?.let { selected ->
-            if (filteredObjects.any { it.id == selected.id }) {
-                updateObjectSelection(selected)
+        if (selectedObjectIds.isNotEmpty()) {
+            updateObjectSelection()
+            if (selectedObjectIds.size == 1) {
                 scrollSelectedObjectCardIntoView()
             }
         }
@@ -1905,7 +1952,7 @@ class MainView : VerticalLayout() {
         selected: Boolean,
         visibleFields: List<String>,
         grainClassColors: Map<String, String>,
-        onClick: () -> Unit
+        onClick: (com.vaadin.flow.component.ClickEvent<Div>) -> Unit
     ): Div {
         val titleColor = obj.properties["mask_color_rgb"]
             ?.removePrefix("0x")
@@ -1998,7 +2045,7 @@ class MainView : VerticalLayout() {
             style["align-items"] = "center"
             style["justify-content"] = "center"
             styleObjectSelection(selected, style)
-            addClickListener { onClick() }
+            addClickListener { event -> onClick(event) }
         }
     }
 
@@ -2097,6 +2144,10 @@ class MainView : VerticalLayout() {
         cardFieldsPanelTitle.text = "Свойства объекта"
         propertyEditor.isVisible = true
         cardFieldsPanel.isVisible = false
+        if (selectedObjectIds.size > 1) {
+            propertyEditor.add(Paragraph("Выбрано объектов: ${selectedObjectIds.size}. Свойства доступны только для одиночного выбора."))
+            return
+        }
         if (obj == null) {
             propertyEditor.add(Paragraph("Выберите объект, чтобы увидеть и отредактировать его свойства."))
             return
