@@ -159,6 +159,18 @@ class MainView : VerticalLayout() {
         isPadding = false
         isSpacing = true
     }
+    private val createCollectionButton = Button(VaadinIcon.PLUS.create()).apply {
+        addClickListener { openCreateCollectionDialog() }
+        element.setAttribute("title", "Добавить коллекцию")
+    }
+    private val renameCollectionButton = Button(VaadinIcon.EDIT.create()).apply {
+        addClickListener { openRenameCollectionDialog() }
+        element.setAttribute("title", "Переименовать коллекцию")
+    }
+    private val deleteCollectionButton = Button(VaadinIcon.TRASH.create()).apply {
+        addClickListener { deleteSelectedCollection() }
+        element.setAttribute("title", "Удалить коллекцию")
+    }
     private var leftPanelMode: LeftPanelMode = LeftPanelMode.PROJECTS
 
     private var selectedProject: DatasetProject? = null
@@ -231,10 +243,19 @@ class MainView : VerticalLayout() {
         if (leftPanelMode == LeftPanelMode.PROJECTS) {
             leftActions.add(Button("Импорт").apply { addClickListener { openImportDialog() } })
         } else {
-            leftActions.add(Button("Добавить").apply { addClickListener { openCreateCollectionDialog() } })
-            leftActions.add(Button("Переименовать").apply { addClickListener { openRenameCollectionDialog() } })
-            leftActions.add(Button("Удалить").apply { addClickListener { deleteSelectedCollection() } })
+            listOf(createCollectionButton, renameCollectionButton, deleteCollectionButton).forEach { button ->
+                button.style["padding"] = "0"
+                button.style["min-width"] = "var(--lumo-size-m)"
+            }
+            leftActions.add(createCollectionButton, renameCollectionButton, deleteCollectionButton)
         }
+        updateCollectionActionState()
+    }
+
+    private fun updateCollectionActionState() {
+        val canEditCollection = leftPanelMode == LeftPanelMode.COLLECTIONS && selectedCollection != null
+        renameCollectionButton.isEnabled = canEditCollection
+        deleteCollectionButton.isEnabled = canEditCollection
     }
 
     private fun configureObjectGallery() {
@@ -418,7 +439,8 @@ class MainView : VerticalLayout() {
             val collection = DatasetCollection(
                 id = "collection-${System.currentTimeMillis()}",
                 name = rawName,
-                objects = mutableListOf()
+                objects = mutableListOf(),
+                classColors = mutableMapOf()
             )
             collections.add(0, collection)
             dialog.close()
@@ -849,7 +871,7 @@ class MainView : VerticalLayout() {
     private fun refreshFilterOptions(objects: List<DatasetObject>) {
         val currentGrainClassFilter = selectedGrainClasses.toSet()
         val currentStatusFilter = statusFilter.value?.trim().orEmpty()
-        val grainClassColors = objects
+        val objectClassColors = objects
             .mapNotNull { candidate ->
                 val grainClass = candidate.properties["grain_class"]?.trim().orEmpty()
                 val maskColor = normalizeMaskColor(candidate.properties["mask_color_rgb"]).orEmpty()
@@ -857,8 +879,10 @@ class MainView : VerticalLayout() {
                 grainClass to maskColor
             }
             .toMap()
+        val collectionClassColors = selectedCollection?.classColors.orEmpty()
+        val grainClassColors = collectionClassColors + objectClassColors
 
-        val grainClassItems = (objects.mapNotNull { it.properties["grain_class"] } + currentGrainClassFilter)
+        val grainClassItems = (objects.mapNotNull { it.properties["grain_class"] } + currentGrainClassFilter + grainClassColors.keys)
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
@@ -1692,7 +1716,7 @@ class MainView : VerticalLayout() {
         sourceObjects: List<DatasetObject>
     ): MergeResult {
         val sourceClassToColor = classColorMap(sourceProject.objects)
-        val targetClassToColor = classColorMap(targetCollection.objects)
+        val targetClassToColor = targetCollection.classColors + classColorMap(targetCollection.objects)
         val conflicts = mutableListOf<String>()
 
         sourceClassToColor.forEach { (grainClass, sourceColor) ->
@@ -1725,6 +1749,7 @@ class MainView : VerticalLayout() {
                 obj.copy(properties = obj.properties.toMutableMap())
             }
         targetCollection.objects.addAll(newObjects)
+        targetCollection.classColors.putAll(sourceClassToColor)
         return MergeResult(
             success = true,
             message = "Добавлено ${newObjects.size} из ${sourceObjects.size} объектов в коллекцию \"${targetCollection.name}\"."
@@ -2084,22 +2109,23 @@ class MainView : VerticalLayout() {
             .filter { it.isNotBlank() && it != MULTIPHASE_CLASS_NAME }
             .distinct()
             .sorted()
+        val collectionOptions = selectedCollection?.classColors?.keys.orEmpty()
 
-        return (datasetOptions + currentValue.trim())
+        return (datasetOptions + collectionOptions + currentValue.trim())
             .filter { it.isNotBlank() }
             .filter { it == currentValue.trim() || it != MULTIPHASE_CLASS_NAME }
             .distinct()
     }
 
     private fun grainClassColorMapForCurrentDataset(): Map<String, String> =
-        activeObjects()
+        (selectedCollection?.classColors.orEmpty() + activeObjects()
             .mapNotNull { candidate ->
                 val grainClass = candidate.properties["grain_class"]?.trim().orEmpty()
                 val maskColor = normalizeMaskColor(candidate.properties["mask_color_rgb"]).orEmpty()
                 if (grainClass.isBlank() || maskColor.isBlank()) return@mapNotNull null
                 grainClass to maskColor
             }
-            .toMap()
+            .toMap())
 
     private fun normalizeMaskColor(rawColor: String?): String? {
         val clean = rawColor
@@ -2476,7 +2502,8 @@ private data class DatasetProject(
 private data class DatasetCollection(
     val id: String,
     var name: String,
-    val objects: MutableList<DatasetObject>
+    val objects: MutableList<DatasetObject>,
+    val classColors: MutableMap<String, String>
 )
 
 private data class DatasetObject(
