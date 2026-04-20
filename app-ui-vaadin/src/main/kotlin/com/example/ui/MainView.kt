@@ -9,6 +9,7 @@ import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.component.datepicker.DatePicker
 import com.vaadin.flow.component.contextmenu.MenuItem
 import com.vaadin.flow.component.contextmenu.SubMenu
+import com.vaadin.flow.component.colorpicker.ColorPicker
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.dnd.DragSource
 import com.vaadin.flow.component.dnd.DropEffect
@@ -26,6 +27,7 @@ import com.vaadin.flow.component.splitlayout.SplitLayout
 import com.vaadin.flow.component.textfield.NumberField
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup
 import com.vaadin.flow.component.tabs.Tab
 import com.vaadin.flow.component.tabs.Tabs
 import com.vaadin.flow.data.renderer.ComponentRenderer
@@ -501,27 +503,31 @@ class MainView : VerticalLayout() {
             showError("Сначала выберите проект.")
             return
         }
-        if (collections.isEmpty()) {
-            showError("Создайте хотя бы одну коллекцию.")
-            return
-        }
         val filteredObjects = applyFilters(project.objects)
         if (filteredObjects.isEmpty()) {
             showError("Нет объектов, подходящих под текущие фильтры.")
             return
         }
+        val hasCollections = collections.isNotEmpty()
         val collectionPicker = ComboBox<DatasetCollection>("Коллекция").apply {
             setItems(collections)
             setItemLabelGenerator { it.name }
-            value = selectedCollection ?: collections.first()
+            if (hasCollections) {
+                value = selectedCollection ?: collections.first()
+            }
             setWidthFull()
+            isVisible = hasCollections
+        }
+        val autoCollectionHint = Paragraph("Коллекция будет создана автоматически после подтверждения: \"${generateNextCollectionName()}\".").apply {
+            isVisible = !hasCollections
         }
         val dialog = Dialog().apply {
             headerTitle = "Добавить в коллекцию"
             add(
                 VerticalLayout(
                     Paragraph("Будут добавлены ${filteredObjects.size} объектов из проекта \"${project.name}\"."),
-                    collectionPicker
+                    collectionPicker,
+                    autoCollectionHint
                 ).apply {
                     isPadding = false
                     isSpacing = true
@@ -529,25 +535,141 @@ class MainView : VerticalLayout() {
             )
         }
         val addButton = Button("Добавить") {
-            val targetCollection = collectionPicker.value
-            if (targetCollection == null) {
+            val targetCollection = collectionPicker.value ?: DatasetCollection(
+                id = "collection-${System.currentTimeMillis()}",
+                name = generateNextCollectionName(),
+                objects = mutableListOf(),
+                classColors = mutableMapOf()
+            )
+            if (hasCollections && collectionPicker.value == null) {
                 showError("Выберите коллекцию.")
                 return@Button
             }
-            val mergeResult = mergeProjectObjectsIntoCollection(project, targetCollection, filteredObjects)
-            if (!mergeResult.success) {
-                showError(mergeResult.message)
-                return@Button
+            val sourceClassToColor = classColorMap(project.objects)
+            val targetClassToColor = targetCollection.classColors + classColorMap(targetCollection.objects)
+            val conflicts = detectClassColorConflicts(sourceClassToColor, targetClassToColor)
+
+            fun executeMerge(resolvedSourceColors: Map<String, String>) {
+                val mergeResult = mergeProjectObjectsIntoCollection(project, targetCollection, filteredObjects, resolvedSourceColors)
+                if (!mergeResult.success) {
+                    showError(mergeResult.message)
+                    return
+                }
+                if (targetCollection.id !in collections.map { it.id }) {
+                    collections.add(0, targetCollection)
+                    selectedCollection = targetCollection
+                }
+                dialog.close()
+                Notification.show(mergeResult.message, 3000, Notification.Position.BOTTOM_START)
+                if (leftPanelMode == LeftPanelMode.COLLECTIONS && selectedCollection?.id == targetCollection.id) {
+                    refreshCurrentSelection()
+                } else {
+                    renderProjects()
+                }
             }
-            dialog.close()
-            Notification.show(mergeResult.message, 3000, Notification.Position.BOTTOM_START)
-            if (leftPanelMode == LeftPanelMode.COLLECTIONS && selectedCollection?.id == targetCollection.id) {
-                refreshCurrentSelection()
+
+            if (conflicts.isEmpty()) {
+                executeMerge(sourceClassToColor)
             } else {
-                renderProjects()
+                openConflictResolutionDialog(conflicts) { resolvedOverrides ->
+                    val resolvedColors = sourceClassToColor.toMutableMap().apply { putAll(resolvedOverrides) }
+                    executeMerge(resolvedColors)
+                }
             }
         }
         dialog.footer.add(Button("Отмена") { dialog.close() }, addButton)
+        dialog.open()
+    }
+
+    private fun generateNextCollectionName(): String {
+        val prefix = "Новая коллекция "
+        val used = collections.mapNotNull { item ->
+            item.name.removePrefix(prefix).trim().toIntOrNull()
+        }.toSet()
+        val next = generateSequence(1) { it + 1 }.first { it !in used }
+        return "$prefix$next"
+    }
+
+    private fun detectClassColorConflicts(
+        sourceClassToColor: Map<String, String>,
+        targetClassToColor: Map<String, String>
+    ): List<ClassColorConflict> =
+        sourceClassToColor.mapNotNull { (grainClass, sourceColor) ->
+            val targetColor = targetClassToColor[grainClass] ?: return@mapNotNull null
+            if (targetColor == sourceColor) return@mapNotNull null
+            ClassColorConflict(grainClass, sourceColor, targetColor)
+        }
+
+    private fun openConflictResolutionDialog(
+        conflicts: List<ClassColorConflict>,
+        onResolved: (Map<String, String>) -> Unit
+    ) {
+        val optionLabels = mapOf(
+            ConflictResolutionOption.KEEP_TARGET to "Оставить цвет коллекции",
+            ConflictResolutionOption.KEEP_SOURCE to "Взять цвет исходного набора",
+            ConflictResolutionOption.CUSTOM to "Задать свой цвет"
+        )
+        val optionByClass = mutableMapOf<String, RadioButtonGroup<ConflictResolutionOption>>()
+        val customByClass = mutableMapOf<String, ColorPicker>()
+
+        val dialog = Dialog().apply {
+            headerTitle = "Конфликт цветов классов"
+        }
+        val content = VerticalLayout().apply {
+            isPadding = false
+            isSpacing = true
+        }
+        conflicts.forEach { conflict ->
+            val options = RadioButtonGroup<ConflictResolutionOption>().apply {
+                setItems(
+                    ConflictResolutionOption.KEEP_TARGET,
+                    ConflictResolutionOption.KEEP_SOURCE,
+                    ConflictResolutionOption.CUSTOM
+                )
+                setItemLabelGenerator { optionLabels[it].orEmpty() }
+                value = ConflictResolutionOption.KEEP_TARGET
+            }
+            val customPicker = ColorPicker("Свой цвет").apply {
+                value = "#" + conflict.sourceColor.removePrefix("0x")
+                isEnabled = false
+                addValueChangeListener { }
+            }
+            options.addValueChangeListener {
+                customPicker.isEnabled = it.value == ConflictResolutionOption.CUSTOM
+            }
+            optionByClass[conflict.grainClass] = options
+            customByClass[conflict.grainClass] = customPicker
+            content.add(
+                Div(
+                    H5("Класс: ${conflict.grainClass}"),
+                    Paragraph("Цвет в коллекции: ${conflict.targetColor} • в исходном наборе: ${conflict.sourceColor}"),
+                    options,
+                    customPicker
+                ).apply {
+                    style["padding"] = "10px"
+                    style["border"] = "1px solid var(--lumo-contrast-20pct)"
+                    style["border-radius"] = "10px"
+                }
+            )
+        }
+        dialog.add(content)
+        val applyButton = Button("Применить") {
+            val resolved = mutableMapOf<String, String>()
+            conflicts.forEach { conflict ->
+                val selectedOption = optionByClass[conflict.grainClass]?.value ?: ConflictResolutionOption.KEEP_TARGET
+                resolved[conflict.grainClass] = when (selectedOption) {
+                    ConflictResolutionOption.KEEP_TARGET -> conflict.targetColor
+                    ConflictResolutionOption.KEEP_SOURCE -> conflict.sourceColor
+                    ConflictResolutionOption.CUSTOM -> {
+                        val customHex = customByClass[conflict.grainClass]?.value ?: ("#" + conflict.sourceColor.removePrefix("0x"))
+                        normalizeMaskColor(customHex) ?: conflict.sourceColor
+                    }
+                }
+            }
+            dialog.close()
+            onResolved(resolved)
+        }
+        dialog.footer.add(Button("Отмена") { dialog.close() }, applyButton)
         dialog.open()
     }
 
@@ -1713,9 +1835,10 @@ class MainView : VerticalLayout() {
     private fun mergeProjectObjectsIntoCollection(
         sourceProject: DatasetProject,
         targetCollection: DatasetCollection,
-        sourceObjects: List<DatasetObject>
+        sourceObjects: List<DatasetObject>,
+        resolvedSourceClassToColor: Map<String, String>
     ): MergeResult {
-        val sourceClassToColor = classColorMap(sourceProject.objects)
+        val sourceClassToColor = resolvedSourceClassToColor
         val targetClassToColor = targetCollection.classColors + classColorMap(targetCollection.objects)
         val conflicts = mutableListOf<String>()
 
@@ -1746,7 +1869,14 @@ class MainView : VerticalLayout() {
         val newObjects = sourceObjects
             .filter { it.id !in existingIds }
             .map { obj ->
-                obj.copy(properties = obj.properties.toMutableMap())
+                val copiedProperties = obj.properties.toMutableMap()
+                copiedProperties.putIfAbsent("source_project_id", obj.sourceProjectId ?: sourceProject.id)
+                copiedProperties.putIfAbsent("source_project_name", obj.sourceProjectName ?: sourceProject.name)
+                obj.copy(
+                    properties = copiedProperties,
+                    sourceProjectId = obj.sourceProjectId ?: sourceProject.id,
+                    sourceProjectName = obj.sourceProjectName ?: sourceProject.name
+                )
             }
         targetCollection.objects.addAll(newObjects)
         targetCollection.classColors.putAll(sourceClassToColor)
@@ -2511,7 +2641,9 @@ private data class DatasetObject(
     val name: String,
     val category: String,
     val previewUrl: String,
-    val properties: MutableMap<String, String>
+    val properties: MutableMap<String, String>,
+    val sourceProjectId: String? = null,
+    val sourceProjectName: String? = null
 )
 
 private data class Point(
@@ -2557,6 +2689,18 @@ private data class MergeResult(
     val success: Boolean,
     val message: String
 )
+
+private data class ClassColorConflict(
+    val grainClass: String,
+    val sourceColor: String,
+    val targetColor: String
+)
+
+private enum class ConflictResolutionOption {
+    KEEP_TARGET,
+    KEEP_SOURCE,
+    CUSTOM
+}
 
 private enum class ObjectFilter {
     GRAIN_CLASS,
