@@ -625,12 +625,37 @@ class MainView : VerticalLayout() {
                 value = ConflictResolutionOption.KEEP_TARGET
                 isClearButtonVisible = false
                 setWidthFull()
+                setRenderer(
+                    ComponentRenderer { option ->
+                        val optionColor = when (option) {
+                            ConflictResolutionOption.KEEP_TARGET -> conflict.targetColor
+                            ConflictResolutionOption.KEEP_SOURCE -> conflict.sourceColor
+                        }
+                        HorizontalLayout(colorDot(optionColor), Span(optionLabels[option].orEmpty())).apply {
+                            isPadding = false
+                            isSpacing = true
+                            alignItems = FlexComponent.Alignment.CENTER
+                            style["gap"] = "8px"
+                        }
+                    }
+                )
             }
             optionByClass[conflict.grainClass] = options
+            val colorMeta = HorizontalLayout(
+                Span("Цвет в коллекции:"),
+                colorDot(conflict.targetColor),
+                Span("Цвет в исходном наборе:"),
+                colorDot(conflict.sourceColor)
+            ).apply {
+                isPadding = false
+                isSpacing = true
+                alignItems = FlexComponent.Alignment.CENTER
+                style["gap"] = "8px"
+            }
             content.add(
                 Div(
                     H5("Класс: ${conflict.grainClass}"),
-                    Paragraph("Цвет в коллекции: ${conflict.targetColor} • в исходном наборе: ${conflict.sourceColor}"),
+                    colorMeta,
                     options
                 ).apply {
                     style["padding"] = "10px"
@@ -1822,32 +1847,6 @@ class MainView : VerticalLayout() {
         resolvedSourceClassToColor: Map<String, String>
     ): MergeResult {
         val sourceClassToColor = resolvedSourceClassToColor
-        val targetClassToColor = targetCollection.classColors + classColorMap(targetCollection.objects)
-        val conflicts = mutableListOf<String>()
-
-        sourceClassToColor.forEach { (grainClass, sourceColor) ->
-            val existingColor = targetClassToColor[grainClass]
-            if (existingColor != null && existingColor != sourceColor) {
-                conflicts += "класс \"$grainClass\": цвет в проекте $sourceColor, в коллекции $existingColor"
-            }
-        }
-
-        val sourceColorToClass = sourceClassToColor.entries.associate { it.value to it.key }
-        val targetColorToClass = targetClassToColor.entries.associate { it.value to it.key }
-        sourceColorToClass.forEach { (color, sourceClass) ->
-            val existingClass = targetColorToClass[color]
-            if (existingClass != null && existingClass != sourceClass) {
-                conflicts += "цвет $color: класс в проекте \"$sourceClass\", в коллекции \"$existingClass\""
-            }
-        }
-
-        if (conflicts.isNotEmpty()) {
-            return MergeResult(
-                success = false,
-                message = "Добавление отклонено из-за конфликтов классов:\n${conflicts.joinToString("\n")}"
-            )
-        }
-
         val existingIds = targetCollection.objects.map { it.id }.toMutableSet()
         val newObjects = sourceObjects
             .filter { it.id !in existingIds }
@@ -1861,11 +1860,17 @@ class MainView : VerticalLayout() {
                     sourceProjectName = obj.sourceProjectName ?: sourceProject.name
                 )
             }
+        val skippedCount = sourceObjects.size - newObjects.size
         targetCollection.objects.addAll(newObjects)
         targetCollection.classColors.putAll(sourceClassToColor)
         return MergeResult(
             success = true,
-            message = "Добавлено ${newObjects.size} из ${sourceObjects.size} объектов в коллекцию \"${targetCollection.name}\"."
+            message = buildString {
+                append("Добавлено ${newObjects.size} из ${sourceObjects.size} объектов в коллекцию \"${targetCollection.name}\".")
+                if (skippedCount > 0) {
+                    append(" Пропущено дублей: $skippedCount.")
+                }
+            }
         )
     }
 
