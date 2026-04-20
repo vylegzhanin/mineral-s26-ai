@@ -9,7 +9,6 @@ import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.component.datepicker.DatePicker
 import com.vaadin.flow.component.contextmenu.MenuItem
 import com.vaadin.flow.component.contextmenu.SubMenu
-import com.vaadin.flow.component.colorpicker.ColorPicker
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.dnd.DragSource
 import com.vaadin.flow.component.dnd.DropEffect
@@ -610,7 +609,7 @@ class MainView : VerticalLayout() {
             ConflictResolutionOption.CUSTOM to "Задать свой цвет"
         )
         val optionByClass = mutableMapOf<String, RadioButtonGroup<ConflictResolutionOption>>()
-        val customByClass = mutableMapOf<String, ColorPicker>()
+        val customByClass = mutableMapOf<String, TextField>()
 
         val dialog = Dialog().apply {
             headerTitle = "Конфликт цветов классов"
@@ -629,10 +628,11 @@ class MainView : VerticalLayout() {
                 setItemLabelGenerator { optionLabels[it].orEmpty() }
                 value = ConflictResolutionOption.KEEP_TARGET
             }
-            val customPicker = ColorPicker("Свой цвет").apply {
+            val customPicker = TextField("Свой цвет (HEX)").apply {
                 value = "#" + conflict.sourceColor.removePrefix("0x")
                 isEnabled = false
-                addValueChangeListener { }
+                placeholder = "#RRGGBB"
+                helperText = "Например: #2FA4FF или 0x2FA4FF"
             }
             options.addValueChangeListener {
                 customPicker.isEnabled = it.value == ConflictResolutionOption.CUSTOM
