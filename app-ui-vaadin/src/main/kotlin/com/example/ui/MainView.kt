@@ -26,7 +26,6 @@ import com.vaadin.flow.component.splitlayout.SplitLayout
 import com.vaadin.flow.component.textfield.NumberField
 import com.vaadin.flow.component.textfield.TextArea
 import com.vaadin.flow.component.textfield.TextField
-import com.vaadin.flow.component.radiobutton.RadioButtonGroup
 import com.vaadin.flow.component.tabs.Tab
 import com.vaadin.flow.component.tabs.Tabs
 import com.vaadin.flow.data.renderer.ComponentRenderer
@@ -604,12 +603,10 @@ class MainView : VerticalLayout() {
         onResolved: (Map<String, String>) -> Unit
     ) {
         val optionLabels = mapOf(
-            ConflictResolutionOption.KEEP_TARGET to "Оставить цвет коллекции",
-            ConflictResolutionOption.KEEP_SOURCE to "Взять цвет исходного набора",
-            ConflictResolutionOption.CUSTOM to "Задать свой цвет"
+            ConflictResolutionOption.KEEP_TARGET to "Использовать цвет коллекции назначения",
+            ConflictResolutionOption.KEEP_SOURCE to "Использовать цвет исходного набора"
         )
-        val optionByClass = mutableMapOf<String, RadioButtonGroup<ConflictResolutionOption>>()
-        val customByClass = mutableMapOf<String, TextField>()
+        val optionByClass = mutableMapOf<String, ComboBox<ConflictResolutionOption>>()
 
         val dialog = Dialog().apply {
             headerTitle = "Конфликт цветов классов"
@@ -619,32 +616,22 @@ class MainView : VerticalLayout() {
             isSpacing = true
         }
         conflicts.forEach { conflict ->
-            val options = RadioButtonGroup<ConflictResolutionOption>().apply {
+            val options = ComboBox<ConflictResolutionOption>("Решение").apply {
                 setItems(
                     ConflictResolutionOption.KEEP_TARGET,
-                    ConflictResolutionOption.KEEP_SOURCE,
-                    ConflictResolutionOption.CUSTOM
+                    ConflictResolutionOption.KEEP_SOURCE
                 )
                 setItemLabelGenerator { optionLabels[it].orEmpty() }
                 value = ConflictResolutionOption.KEEP_TARGET
-            }
-            val customPicker = TextField("Свой цвет (HEX)").apply {
-                value = "#" + conflict.sourceColor.removePrefix("0x")
-                isEnabled = false
-                placeholder = "#RRGGBB"
-                helperText = "Например: #2FA4FF или 0x2FA4FF"
-            }
-            options.addValueChangeListener {
-                customPicker.isEnabled = it.value == ConflictResolutionOption.CUSTOM
+                isClearButtonVisible = false
+                setWidthFull()
             }
             optionByClass[conflict.grainClass] = options
-            customByClass[conflict.grainClass] = customPicker
             content.add(
                 Div(
                     H5("Класс: ${conflict.grainClass}"),
                     Paragraph("Цвет в коллекции: ${conflict.targetColor} • в исходном наборе: ${conflict.sourceColor}"),
-                    options,
-                    customPicker
+                    options
                 ).apply {
                     style["padding"] = "10px"
                     style["border"] = "1px solid var(--lumo-contrast-20pct)"
@@ -660,10 +647,6 @@ class MainView : VerticalLayout() {
                 resolved[conflict.grainClass] = when (selectedOption) {
                     ConflictResolutionOption.KEEP_TARGET -> conflict.targetColor
                     ConflictResolutionOption.KEEP_SOURCE -> conflict.sourceColor
-                    ConflictResolutionOption.CUSTOM -> {
-                        val customHex = customByClass[conflict.grainClass]?.value ?: ("#" + conflict.sourceColor.removePrefix("0x"))
-                        normalizeMaskColor(customHex) ?: conflict.sourceColor
-                    }
                 }
             }
             dialog.close()
@@ -2698,8 +2681,7 @@ private data class ClassColorConflict(
 
 private enum class ConflictResolutionOption {
     KEEP_TARGET,
-    KEEP_SOURCE,
-    CUSTOM
+    KEEP_SOURCE
 }
 
 private enum class ObjectFilter {
