@@ -569,7 +569,11 @@ class MainView : VerticalLayout() {
             if (conflicts.isEmpty()) {
                 executeMerge(sourceClassToColor)
             } else {
-                openConflictResolutionDialog(conflicts) { resolvedOverrides ->
+                openConflictResolutionDialog(
+                    conflicts = conflicts,
+                    sourceProjectName = project.name,
+                    targetCollectionName = targetCollection.name
+                ) { resolvedOverrides ->
                     val resolvedColors = sourceClassToColor.toMutableMap().apply { putAll(resolvedOverrides) }
                     executeMerge(resolvedColors)
                 }
@@ -580,7 +584,7 @@ class MainView : VerticalLayout() {
     }
 
     private fun generateNextCollectionName(): String {
-        val prefix = "Новая коллекция "
+        val prefix = "Новая "
         val used = collections.mapNotNull { item ->
             item.name.removePrefix(prefix).trim().toIntOrNull()
         }.toSet()
@@ -600,11 +604,13 @@ class MainView : VerticalLayout() {
 
     private fun openConflictResolutionDialog(
         conflicts: List<ClassColorConflict>,
+        sourceProjectName: String,
+        targetCollectionName: String,
         onResolved: (Map<String, String>) -> Unit
     ) {
         val optionLabels = mapOf(
-            ConflictResolutionOption.KEEP_TARGET to "Использовать цвет коллекции назначения",
-            ConflictResolutionOption.KEEP_SOURCE to "Использовать цвет исходного набора"
+            ConflictResolutionOption.KEEP_TARGET to "Использовать цвет коллекции \"$targetCollectionName\"",
+            ConflictResolutionOption.KEEP_SOURCE to "Использовать цвет проекта \"$sourceProjectName\""
         )
         val optionByClass = mutableMapOf<String, ComboBox<ConflictResolutionOption>>()
 
@@ -648,9 +654,9 @@ class MainView : VerticalLayout() {
             }
             optionByClass[conflict.grainClass] = options
             val colorMeta = HorizontalLayout(
-                Span("Цвет в коллекции:"),
+                Span("Цвет в коллекции $targetCollectionName:"),
                 colorDot(conflict.targetColor),
-                Span("Цвет в исходном наборе:"),
+                Span("Цвет в проекте $sourceProjectName:"),
                 colorDot(conflict.sourceColor)
             ).apply {
                 isPadding = false
