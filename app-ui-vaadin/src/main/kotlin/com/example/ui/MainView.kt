@@ -616,6 +616,12 @@ class MainView : VerticalLayout() {
             isSpacing = true
         }
         conflicts.forEach { conflict ->
+            fun optionColor(option: ConflictResolutionOption?): String =
+                when (option) {
+                    ConflictResolutionOption.KEEP_SOURCE -> conflict.sourceColor
+                    else -> conflict.targetColor
+                }
+
             val options = ComboBox<ConflictResolutionOption>("Решение").apply {
                 setItems(
                     ConflictResolutionOption.KEEP_TARGET,
@@ -627,11 +633,7 @@ class MainView : VerticalLayout() {
                 setWidthFull()
                 setRenderer(
                     ComponentRenderer { option ->
-                        val optionColor = when (option) {
-                            ConflictResolutionOption.KEEP_TARGET -> conflict.targetColor
-                            ConflictResolutionOption.KEEP_SOURCE -> conflict.sourceColor
-                        }
-                        HorizontalLayout(colorDot(optionColor), Span(optionLabels[option].orEmpty())).apply {
+                        HorizontalLayout(colorDot(optionColor(option)), Span(optionLabels[option].orEmpty())).apply {
                             isPadding = false
                             isSpacing = true
                             alignItems = FlexComponent.Alignment.CENTER
@@ -639,6 +641,10 @@ class MainView : VerticalLayout() {
                         }
                     }
                 )
+                prefixComponent = colorDot(optionColor(value))
+                addValueChangeListener { event ->
+                    prefixComponent = colorDot(optionColor(event.value))
+                }
             }
             optionByClass[conflict.grainClass] = options
             val colorMeta = HorizontalLayout(
