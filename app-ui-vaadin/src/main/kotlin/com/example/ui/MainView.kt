@@ -1068,7 +1068,7 @@ class MainView : VerticalLayout() {
             val multiphaseSelected = MULTIPHASE_CLASS_NAME in selectedGrainClasses
             val multiphaseRoot = menu.addItem(
                 HorizontalLayout(
-                    colorDot(grainClassColorsByClass[MULTIPHASE_CLASS_NAME]),
+                    if (multiphaseSelected) multiphaseSelectedDot() else Span(""),
                     Span(MULTIPHASE_CLASS_NAME)
                 ).apply {
                     isPadding = false
@@ -1077,8 +1077,6 @@ class MainView : VerticalLayout() {
                     style["gap"] = "8px"
                 }
             )
-            multiphaseRoot.isCheckable = true
-            multiphaseRoot.isChecked = multiphaseSelected
             multiphaseRoot.subMenu.addItem("Любой Многофазный") {
                 applyGrainClassQuickFilter(MULTIPHASE_CLASS_NAME)
                 rebuildFilterAddMenu()
@@ -1159,6 +1157,17 @@ class MainView : VerticalLayout() {
             isSpacing = true
             alignItems = FlexComponent.Alignment.CENTER
             style["gap"] = "8px"
+        }
+
+    private fun multiphaseSelectedDot(): Component =
+        Div().apply {
+            style["width"] = "12px"
+            style["height"] = "12px"
+            style["border-radius"] = "999px"
+            style["background"] = "var(--lumo-primary-color)"
+            style["border"] = "1px solid rgba(0,0,0,0.85)"
+            style["display"] = "inline-block"
+            style["flex-shrink"] = "0"
         }
 
     private fun cardFieldsMenu(): MenuBar =
