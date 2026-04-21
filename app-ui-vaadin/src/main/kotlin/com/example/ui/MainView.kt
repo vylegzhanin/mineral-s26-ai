@@ -1091,7 +1091,14 @@ class MainView : VerticalLayout() {
                 val label = phases.joinToString(" + ")
                 multiphaseRoot.subMenu.addItem(phaseCombinationOptionView(phases)) {
                     activeFilters.add(ObjectFilter.GRAIN_CLASS)
-                    setGrainClassFilterSelection(linkedSetOf(MULTIPHASE_CLASS_NAME).apply { addAll(phases) })
+                    val groupedSelection = linkedSetOf(MULTIPHASE_CLASS_NAME).apply { addAll(phases) }
+                    val nextSelection =
+                        if (selectedGrainClasses == groupedSelection) {
+                            linkedSetOf(MULTIPHASE_CLASS_NAME)
+                        } else {
+                            groupedSelection
+                        }
+                    setGrainClassFilterSelection(nextSelection)
                     rebuildFilterAddMenu()
                     rebuildGrainClassToolbarMenu()
                 }.apply {
