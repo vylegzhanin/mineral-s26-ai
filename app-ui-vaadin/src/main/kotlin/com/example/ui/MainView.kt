@@ -1063,24 +1063,13 @@ class MainView : VerticalLayout() {
             menu.addItem("Нет классов").apply { isEnabled = false }
             return
         }
-        availableGrainClassItems.filter { it != MULTIPHASE_CLASS_NAME }.forEach { grainClass ->
-            menu.addItem(grainClassOptionView(grainClass, grainClassColorsByClass[grainClass])) {
-                applyGrainClassQuickFilter(grainClass)
-                rebuildFilterAddMenu()
-                rebuildGrainClassToolbarMenu()
-            }.apply {
-                isCheckable = true
-                isChecked = grainClass in selectedGrainClasses
-            }
-        }
 
         if (MULTIPHASE_CLASS_NAME in availableGrainClassItems || multiphaseCombos.isNotEmpty()) {
             val multiphaseSelected = MULTIPHASE_CLASS_NAME in selectedGrainClasses
             val multiphaseRoot = menu.addItem(
                 HorizontalLayout(
                     colorDot(grainClassColorsByClass[MULTIPHASE_CLASS_NAME]),
-                    Span(MULTIPHASE_CLASS_NAME),
-                    if (multiphaseSelected) VaadinIcon.CHECK.create() else Span("")
+                    Span(MULTIPHASE_CLASS_NAME)
                 ).apply {
                     isPadding = false
                     isSpacing = true
@@ -1088,6 +1077,8 @@ class MainView : VerticalLayout() {
                     style["gap"] = "8px"
                 }
             )
+            multiphaseRoot.isCheckable = true
+            multiphaseRoot.isChecked = multiphaseSelected
             multiphaseRoot.subMenu.addItem("Любой Многофазный") {
                 applyGrainClassQuickFilter(MULTIPHASE_CLASS_NAME)
                 rebuildFilterAddMenu()
@@ -1118,6 +1109,17 @@ class MainView : VerticalLayout() {
                     isChecked = selectedGrainClasses == (linkedSetOf(MULTIPHASE_CLASS_NAME).apply { addAll(phases) })
                     element.setProperty("title", label)
                 }
+            }
+        }
+
+        availableGrainClassItems.filter { it != MULTIPHASE_CLASS_NAME }.forEach { grainClass ->
+            menu.addItem(grainClassOptionView(grainClass, grainClassColorsByClass[grainClass])) {
+                applyGrainClassQuickFilter(grainClass)
+                rebuildFilterAddMenu()
+                rebuildGrainClassToolbarMenu()
+            }.apply {
+                isCheckable = true
+                isChecked = grainClass in selectedGrainClasses
             }
         }
     }
