@@ -548,6 +548,7 @@ class MainView : VerticalLayout() {
             return
         }
         val filteredObjects = applyFilters(project.objects)
+        val selectedCount = selectedObjectsIn(filteredObjects).size
         val objectsForAdd = objectsForAction(filteredObjects)
         if (objectsForAdd.isEmpty()) {
             showError("Нет объектов, подходящих под текущие фильтры.")
@@ -570,6 +571,7 @@ class MainView : VerticalLayout() {
             headerTitle = "Добавить в коллекцию"
             add(
                 VerticalLayout(
+                    H5(actionScopeMessage(selectedCount, filteredObjects.size, project.objects.size, "проекте \"${project.name}\"")),
                     Paragraph("Будут добавлены ${objectsForAdd.size} объектов из проекта \"${project.name}\"."),
                     collectionPicker,
                     autoCollectionHint
@@ -646,8 +648,22 @@ class MainView : VerticalLayout() {
     }
 
     private fun objectsForAction(filteredObjects: List<DatasetObject>): List<DatasetObject> {
-        val selectedObjects = filteredObjects.filter { it.id in selectedObjectIds }
+        val selectedObjects = selectedObjectsIn(filteredObjects)
         return if (selectedObjects.isNotEmpty()) selectedObjects else filteredObjects
+    }
+
+    private fun selectedObjectsIn(filteredObjects: List<DatasetObject>): List<DatasetObject> =
+        filteredObjects.filter { it.id in selectedObjectIds }
+
+    private fun actionScopeMessage(
+        selectedCount: Int,
+        filteredCount: Int,
+        totalCount: Int,
+        sourceLabel: String
+    ): String = when {
+        selectedCount > 0 -> "Действие применится к выбранным объектам: $selectedCount."
+        filteredCount < totalCount -> "⚠️ Действие применится ко всем объектам по текущему фильтру в $sourceLabel: $filteredCount из $totalCount."
+        else -> "⚠️ Действие применится ко всем объектам в $sourceLabel: $totalCount."
     }
 
     private fun openCollectionTransferDialog(move: Boolean) {
@@ -656,6 +672,7 @@ class MainView : VerticalLayout() {
             return
         }
         val filteredObjects = applyFilters(sourceCollection.objects)
+        val selectedCount = selectedObjectsIn(filteredObjects).size
         val objectsForTransfer = objectsForAction(filteredObjects)
         if (objectsForTransfer.isEmpty()) {
             showError("Нет объектов для операции.")
@@ -677,6 +694,7 @@ class MainView : VerticalLayout() {
             headerTitle = if (move) "Переместить объекты" else "Копировать объекты"
             add(
                 VerticalLayout(
+                    H5(actionScopeMessage(selectedCount, filteredObjects.size, sourceCollection.objects.size, "коллекции \"${sourceCollection.name}\"")),
                     Paragraph("Будет обработано ${objectsForTransfer.size} объектов."),
                     targetPicker
                 ).apply {
@@ -752,6 +770,7 @@ class MainView : VerticalLayout() {
             return
         }
         val filteredObjects = applyFilters(sourceCollection.objects)
+        val selectedCount = selectedObjectsIn(filteredObjects).size
         val objectsForDelete = objectsForAction(filteredObjects)
         if (objectsForDelete.isEmpty()) {
             showError("Нет объектов для удаления.")
@@ -759,7 +778,15 @@ class MainView : VerticalLayout() {
         }
         val dialog = Dialog().apply {
             headerTitle = "Удалить объекты"
-            add(Paragraph("Удалить ${objectsForDelete.size} объектов из коллекции \"${sourceCollection.name}\"?"))
+            add(
+                VerticalLayout(
+                    H5(actionScopeMessage(selectedCount, filteredObjects.size, sourceCollection.objects.size, "коллекции \"${sourceCollection.name}\"")),
+                    Paragraph("Удалить ${objectsForDelete.size} объектов из коллекции \"${sourceCollection.name}\"?")
+                ).apply {
+                    isPadding = false
+                    isSpacing = true
+                }
+            )
         }
         val confirmButton = Button("Подтвердить удаление") {
             val idsToDelete = objectsForDelete.map { it.id }.toSet()
@@ -932,13 +959,21 @@ class MainView : VerticalLayout() {
     private fun collectionActionsMenu(): MenuBar =
         collectionObjectActionsMenuBar.apply {
             removeAll()
-            val root = addIconItem(VaadinIcon.COG.create())
+            val root = addIconItem(VaadinIcon.SHARE.create())
             root.element.setProperty("title", "Действия с объектами коллекции")
-            root.subMenu.addItem("Копировать в другую коллекцию") { openCollectionTransferDialog(move = false) }
-            root.subMenu.addItem("Переместить в другую коллекцию") { openCollectionTransferDialog(move = true) }
-            root.subMenu.addItem("Удалить объекты") { openDeleteCollectionObjectsDialog() }
+            root.subMenu.addItem(menuItemWithIcon(VaadinIcon.COPY_O, "Копировать в другую коллекцию…")) { openCollectionTransferDialog(move = false) }
+            root.subMenu.addItem(menuItemWithIcon(VaadinIcon.ARROW_FORWARD, "Переместить в другую коллекцию…")) { openCollectionTransferDialog(move = true) }
+            root.subMenu.addItem(menuItemWithIcon(VaadinIcon.TRASH, "Удалить объекты…")) { openDeleteCollectionObjectsDialog() }
             isVisible = leftPanelMode == LeftPanelMode.COLLECTIONS
             styleToolbarMenu(this, root)
+        }
+
+    private fun menuItemWithIcon(icon: VaadinIcon, text: String): Component =
+        HorizontalLayout(icon.create(), Span(text)).apply {
+            isPadding = false
+            isSpacing = true
+            alignItems = FlexComponent.Alignment.CENTER
+            style["gap"] = "8px"
         }
 
     private fun filterAddMenu(): MenuBar =
