@@ -1068,7 +1068,7 @@ class MainView : VerticalLayout() {
             val multiphaseSelected = MULTIPHASE_CLASS_NAME in selectedGrainClasses
             val multiphaseRoot = menu.addItem(
                 HorizontalLayout(
-                    if (multiphaseSelected) multiphaseSelectedDot() else Span(""),
+                    multiphaseCompositeIndicator(),
                     Span(MULTIPHASE_CLASS_NAME)
                 ).apply {
                     isPadding = false
@@ -1077,7 +1077,7 @@ class MainView : VerticalLayout() {
                     style["gap"] = "8px"
                 }
             )
-            multiphaseRoot.subMenu.addItem("Любой Многофазный") {
+            multiphaseRoot.subMenu.addItem(grainClassOptionView("Любой Многофазный", grainClassColorsByClass[MULTIPHASE_CLASS_NAME])) {
                 applyGrainClassQuickFilter(MULTIPHASE_CLASS_NAME)
                 rebuildFilterAddMenu()
                 rebuildGrainClassToolbarMenu()
@@ -1159,15 +1159,19 @@ class MainView : VerticalLayout() {
             style["gap"] = "8px"
         }
 
-    private fun multiphaseSelectedDot(): Component =
-        Div().apply {
-            style["width"] = "12px"
-            style["height"] = "12px"
-            style["border-radius"] = "999px"
-            style["background"] = "var(--lumo-primary-color)"
-            style["border"] = "1px solid rgba(0,0,0,0.85)"
-            style["display"] = "inline-block"
-            style["flex-shrink"] = "0"
+    private fun multiphaseCompositeIndicator(): Component =
+        HorizontalLayout().apply {
+            isPadding = false
+            isSpacing = false
+            alignItems = FlexComponent.Alignment.CENTER
+            style["gap"] = "4px"
+            add(colorDot(grainClassColorsByClass[MULTIPHASE_CLASS_NAME]))
+            if (MULTIPHASE_CLASS_NAME in selectedGrainClasses) {
+                selectedGrainClasses
+                    .filter { it != MULTIPHASE_CLASS_NAME }
+                    .sorted()
+                    .forEach { phase -> add(colorDot(grainClassColorsByClass[phase])) }
+            }
         }
 
     private fun cardFieldsMenu(): MenuBar =
