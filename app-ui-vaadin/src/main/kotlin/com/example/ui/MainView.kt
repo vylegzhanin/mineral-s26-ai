@@ -89,6 +89,7 @@ class MainView : VerticalLayout() {
         addClickListener { openAddToCollectionDialog() }
         element.setAttribute("title", "Добавить отфильтрованные объекты проекта в коллекцию")
     }
+    private val collectionObjectActionsMenuBar = MenuBar()
     private val grainClassFilterToolbarMenuBar = MenuBar()
     private var availableGrainClassItems: List<String> = emptyList()
     private var grainClassColorsByClass: Map<String, String> = emptyMap()
@@ -307,6 +308,7 @@ class MainView : VerticalLayout() {
         selectedObjectIds.clear()
         lastSelectedObjectId = null
         addToCollectionButton.isVisible = leftPanelMode == LeftPanelMode.PROJECTS
+        collectionObjectActionsMenuBar.isVisible = leftPanelMode == LeftPanelMode.COLLECTIONS
         rebuildLeftPanelActions()
         renderProjects()
         refreshFilterOptions(activeObjects())
@@ -546,8 +548,7 @@ class MainView : VerticalLayout() {
             return
         }
         val filteredObjects = applyFilters(project.objects)
-        val selectedObjects = filteredObjects.filter { it.id in selectedObjectIds }
-        val objectsForAdd = if (selectedObjects.isNotEmpty()) selectedObjects else filteredObjects
+        val objectsForAdd = objectsForAction(filteredObjects)
         if (objectsForAdd.isEmpty()) {
             showError("Нет объектов, подходящих под текущие фильтры.")
             return
@@ -623,8 +624,8 @@ class MainView : VerticalLayout() {
             } else {
                 openConflictResolutionDialog(
                     conflicts = conflicts,
-                    sourceProjectName = project.name,
-                    targetCollectionName = targetCollection.name
+                    sourceTitle = "проекта \"${project.name}\"",
+                    targetTitle = "коллекции \"${targetCollection.name}\""
                 ) { resolvedOverrides ->
                     val resolvedColors = sourceClassToColor.toMutableMap().apply { putAll(resolvedOverrides) }
                     executeMerge(resolvedColors)
@@ -644,6 +645,135 @@ class MainView : VerticalLayout() {
         return "$prefix$next"
     }
 
+    private fun objectsForAction(filteredObjects: List<DatasetObject>): List<DatasetObject> {
+        val selectedObjects = filteredObjects.filter { it.id in selectedObjectIds }
+        return if (selectedObjects.isNotEmpty()) selectedObjects else filteredObjects
+    }
+
+    private fun openCollectionTransferDialog(move: Boolean) {
+        val sourceCollection = selectedCollection ?: run {
+            showError("Выберите коллекцию.")
+            return
+        }
+        val filteredObjects = applyFilters(sourceCollection.objects)
+        val objectsForTransfer = objectsForAction(filteredObjects)
+        if (objectsForTransfer.isEmpty()) {
+            showError("Нет объектов для операции.")
+            return
+        }
+        val targetCollections = collections.filter { it.id != sourceCollection.id }
+        if (targetCollections.isEmpty()) {
+            showError("Нет другой коллекции для ${if (move) "переноса" else "копирования"}.")
+            return
+        }
+
+        val targetPicker = ComboBox<DatasetCollection>("Коллекция назначения").apply {
+            setItems(targetCollections)
+            setItemLabelGenerator { it.name }
+            value = targetCollections.first()
+            setWidthFull()
+        }
+        val dialog = Dialog().apply {
+            headerTitle = if (move) "Переместить объекты" else "Копировать объекты"
+            add(
+                VerticalLayout(
+                    Paragraph("Будет обработано ${objectsForTransfer.size} объектов."),
+                    targetPicker
+                ).apply {
+                    isPadding = false
+                    isSpacing = true
+                }
+            )
+        }
+        val confirmButton = Button(if (move) "Подтвердить перенос" else "Подтвердить копирование") {
+            val targetCollection = targetPicker.value ?: return@Button
+            executeCollectionTransfer(sourceCollection, targetCollection, objectsForTransfer, move)
+            dialog.close()
+        }
+        dialog.footer.add(Button("Отмена") { dialog.close() }, confirmButton)
+        dialog.open()
+    }
+
+    private fun executeCollectionTransfer(
+        sourceCollection: DatasetCollection,
+        targetCollection: DatasetCollection,
+        objectsForTransfer: List<DatasetObject>,
+        move: Boolean
+    ) {
+        val sourceClassColors = (sourceCollection.classColors + classColorMap(sourceCollection.objects))
+        val transferClassColors = classNamesInObjects(objectsForTransfer)
+            .mapNotNull { className ->
+                val color = sourceClassColors[className] ?: return@mapNotNull null
+                className to color
+            }
+            .toMap()
+        val targetClassToColor = targetCollection.classColors + classColorMap(targetCollection.objects)
+        val conflicts = detectClassColorConflicts(transferClassColors, targetClassToColor)
+
+        fun runTransfer(resolvedColors: Map<String, String>) {
+            val sourceAsProject = DatasetProject(
+                id = sourceCollection.id,
+                name = sourceCollection.name,
+                batch = "",
+                type = "Коллекция",
+                imageCount = 0,
+                source = sourceCollection.name,
+                previewUrl = "",
+                objects = sourceCollection.objects
+            )
+            val result = mergeProjectObjectsIntoCollection(sourceAsProject, targetCollection, objectsForTransfer, resolvedColors)
+            if (move) {
+                val movedIds = objectsForTransfer.map { it.id }.toSet()
+                sourceCollection.objects.removeIf { it.id in movedIds }
+                selectedObjectIds.removeAll(movedIds)
+                syncSelectedObjectState()
+            }
+            refreshCurrentSelection()
+            Notification.show(result.message, 3500, Notification.Position.BOTTOM_START)
+        }
+
+        if (conflicts.isEmpty()) {
+            runTransfer(transferClassColors)
+        } else {
+            openConflictResolutionDialog(
+                conflicts = conflicts,
+                sourceTitle = "коллекции \"${sourceCollection.name}\"",
+                targetTitle = "коллекции \"${targetCollection.name}\""
+            ) { resolved ->
+                val resolvedColors = transferClassColors.toMutableMap().apply { putAll(resolved) }
+                runTransfer(resolvedColors)
+            }
+        }
+    }
+
+    private fun openDeleteCollectionObjectsDialog() {
+        val sourceCollection = selectedCollection ?: run {
+            showError("Выберите коллекцию.")
+            return
+        }
+        val filteredObjects = applyFilters(sourceCollection.objects)
+        val objectsForDelete = objectsForAction(filteredObjects)
+        if (objectsForDelete.isEmpty()) {
+            showError("Нет объектов для удаления.")
+            return
+        }
+        val dialog = Dialog().apply {
+            headerTitle = "Удалить объекты"
+            add(Paragraph("Удалить ${objectsForDelete.size} объектов из коллекции \"${sourceCollection.name}\"?"))
+        }
+        val confirmButton = Button("Подтвердить удаление") {
+            val idsToDelete = objectsForDelete.map { it.id }.toSet()
+            sourceCollection.objects.removeIf { it.id in idsToDelete }
+            selectedObjectIds.removeAll(idsToDelete)
+            syncSelectedObjectState()
+            dialog.close()
+            refreshCurrentSelection()
+            Notification.show("Удалено ${idsToDelete.size} объектов.", 3000, Notification.Position.BOTTOM_START)
+        }
+        dialog.footer.add(Button("Отмена") { dialog.close() }, confirmButton)
+        dialog.open()
+    }
+
     private fun detectClassColorConflicts(
         sourceClassToColor: Map<String, String>,
         targetClassToColor: Map<String, String>
@@ -656,13 +786,13 @@ class MainView : VerticalLayout() {
 
     private fun openConflictResolutionDialog(
         conflicts: List<ClassColorConflict>,
-        sourceProjectName: String,
-        targetCollectionName: String,
+        sourceTitle: String,
+        targetTitle: String,
         onResolved: (Map<String, String>) -> Unit
     ) {
         val optionLabels = mapOf(
-            ConflictResolutionOption.KEEP_TARGET to "Использовать цвет коллекции \"$targetCollectionName\"",
-            ConflictResolutionOption.KEEP_SOURCE to "Использовать цвет проекта \"$sourceProjectName\""
+            ConflictResolutionOption.KEEP_TARGET to "Использовать цвет $targetTitle",
+            ConflictResolutionOption.KEEP_SOURCE to "Использовать цвет $sourceTitle"
         )
         val optionByClass = mutableMapOf<String, ComboBox<ConflictResolutionOption>>()
 
@@ -706,9 +836,9 @@ class MainView : VerticalLayout() {
             }
             optionByClass[conflict.grainClass] = options
             val colorMeta = HorizontalLayout(
-                Span("Цвет в коллекции $targetCollectionName:"),
+                Span("Цвет в $targetTitle:"),
                 colorDot(conflict.targetColor),
-                Span("Цвет в проекте $sourceProjectName:"),
+                Span("Цвет в $sourceTitle:"),
                 colorDot(conflict.sourceColor)
             ).apply {
                 isPadding = false
@@ -750,6 +880,7 @@ class MainView : VerticalLayout() {
             objectHeader,
             HorizontalLayout(
                 addToCollectionButton,
+                collectionActionsMenu(),
                 cardFieldsMenu(),
                 filterAddMenu(),
                 grainClassToolbarMenu(),
@@ -796,6 +927,18 @@ class MainView : VerticalLayout() {
             setWidthFull()
             isPadding = false
             isSpacing = true
+        }
+
+    private fun collectionActionsMenu(): MenuBar =
+        collectionObjectActionsMenuBar.apply {
+            removeAll()
+            val root = addIconItem(VaadinIcon.COG.create())
+            root.element.setProperty("title", "Действия с объектами коллекции")
+            root.subMenu.addItem("Копировать в другую коллекцию") { openCollectionTransferDialog(move = false) }
+            root.subMenu.addItem("Переместить в другую коллекцию") { openCollectionTransferDialog(move = true) }
+            root.subMenu.addItem("Удалить объекты") { openDeleteCollectionObjectsDialog() }
+            isVisible = leftPanelMode == LeftPanelMode.COLLECTIONS
+            styleToolbarMenu(this, root)
         }
 
     private fun filterAddMenu(): MenuBar =
