@@ -1058,11 +1058,12 @@ class MainView : VerticalLayout() {
     }
 
     private fun populateGrainClassMenu(menu: SubMenu) {
-        if (availableGrainClassItems.isEmpty()) {
+        val multiphaseCombos = multiphasePhaseCombinationsForCurrentDataset()
+        if (availableGrainClassItems.isEmpty() && multiphaseCombos.isEmpty()) {
             menu.addItem("Нет классов").apply { isEnabled = false }
             return
         }
-        availableGrainClassItems.forEach { grainClass ->
+        availableGrainClassItems.filter { it != MULTIPHASE_CLASS_NAME }.forEach { grainClass ->
             menu.addItem(grainClassOptionView(grainClass, grainClassColorsByClass[grainClass])) {
                 applyGrainClassQuickFilter(grainClass)
                 rebuildFilterAddMenu()
@@ -1072,7 +1073,72 @@ class MainView : VerticalLayout() {
                 isChecked = grainClass in selectedGrainClasses
             }
         }
+
+        if (MULTIPHASE_CLASS_NAME in availableGrainClassItems || multiphaseCombos.isNotEmpty()) {
+            val multiphaseRoot = menu.addItem(MULTIPHASE_CLASS_NAME)
+            multiphaseRoot.subMenu.addItem("Любой Многофазный") {
+                applyGrainClassQuickFilter(MULTIPHASE_CLASS_NAME)
+                rebuildFilterAddMenu()
+                rebuildGrainClassToolbarMenu()
+            }.apply {
+                isCheckable = true
+                isChecked = MULTIPHASE_CLASS_NAME in selectedGrainClasses
+            }
+            if (multiphaseCombos.isNotEmpty()) {
+                multiphaseRoot.subMenu.addSeparator()
+            }
+            multiphaseCombos.forEach { phases ->
+                val label = phases.joinToString(" + ")
+                multiphaseRoot.subMenu.addItem(phaseCombinationOptionView(phases)) {
+                    activeFilters.add(ObjectFilter.GRAIN_CLASS)
+                    setGrainClassFilterSelection(linkedSetOf(MULTIPHASE_CLASS_NAME).apply { addAll(phases) })
+                    rebuildFilterAddMenu()
+                    rebuildGrainClassToolbarMenu()
+                }.apply {
+                    isCheckable = true
+                    isChecked = selectedGrainClasses == (linkedSetOf(MULTIPHASE_CLASS_NAME).apply { addAll(phases) })
+                    element.setProperty("title", label)
+                }
+            }
+        }
     }
+
+    private fun multiphasePhaseCombinationsForCurrentDataset(): List<List<String>> =
+        activeObjects()
+            .asSequence()
+            .filter { isMultiphaseObject(it) }
+            .mapNotNull { obj ->
+                val rawJson = obj.properties["phase_area_shares"].orEmpty().trim()
+                if (rawJson.isBlank()) return@mapNotNull null
+                val root = runCatching { jsonMapper.readTree(rawJson) }.getOrNull() ?: return@mapNotNull null
+                if (!root.isObject) return@mapNotNull null
+                root.properties()
+                    .asSequence()
+                    .map { it.key.trim() }
+                    .filter { it.isNotBlank() }
+                    .toSet()
+                    .sorted()
+                    .takeIf { it.isNotEmpty() }
+            }
+            .distinct()
+            .sortedBy { it.joinToString(" + ") }
+            .toList()
+
+    private fun phaseCombinationOptionView(phases: List<String>): Component =
+        HorizontalLayout(
+            HorizontalLayout().apply {
+                isPadding = false
+                isSpacing = false
+                style["gap"] = "4px"
+                phases.forEach { phase -> add(colorDot(grainClassColorsByClass[phase])) }
+            },
+            Span(phases.joinToString(" + "))
+        ).apply {
+            isPadding = false
+            isSpacing = true
+            alignItems = FlexComponent.Alignment.CENTER
+            style["gap"] = "8px"
+        }
 
     private fun cardFieldsMenu(): MenuBar =
         cardFieldsMenuBar.apply {
