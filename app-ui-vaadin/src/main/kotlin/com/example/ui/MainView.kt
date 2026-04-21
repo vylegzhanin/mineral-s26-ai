@@ -1075,7 +1075,19 @@ class MainView : VerticalLayout() {
         }
 
         if (MULTIPHASE_CLASS_NAME in availableGrainClassItems || multiphaseCombos.isNotEmpty()) {
-            val multiphaseRoot = menu.addItem(MULTIPHASE_CLASS_NAME)
+            val multiphaseSelected = MULTIPHASE_CLASS_NAME in selectedGrainClasses
+            val multiphaseRoot = menu.addItem(
+                HorizontalLayout(
+                    colorDot(grainClassColorsByClass[MULTIPHASE_CLASS_NAME]),
+                    Span(MULTIPHASE_CLASS_NAME),
+                    if (multiphaseSelected) VaadinIcon.CHECK.create() else Span("")
+                ).apply {
+                    isPadding = false
+                    isSpacing = true
+                    alignItems = FlexComponent.Alignment.CENTER
+                    style["gap"] = "8px"
+                }
+            )
             multiphaseRoot.subMenu.addItem("Любой Многофазный") {
                 applyGrainClassQuickFilter(MULTIPHASE_CLASS_NAME)
                 rebuildFilterAddMenu()
