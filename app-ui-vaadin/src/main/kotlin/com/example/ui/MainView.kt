@@ -3046,7 +3046,7 @@ class MainView : VerticalLayout() {
             isSpacing = true
             setWidthFull()
         }
-        layout.add(buildInteractivePieChart(shares))
+        layout.add(buildInteractivePieChart("Доли фаз по площади, %", shares))
         val avgBoundaryDensity = if (boundaryObjects == 0) 0.0 else boundaryDensitySum / boundaryObjects.toDouble()
         val avgEntropy = if (boundaryObjects == 0) 0.0 else boundaryEntropySum / boundaryObjects.toDouble()
         layout.add(
@@ -3057,12 +3057,21 @@ class MainView : VerticalLayout() {
         )
         layout.add(buildBoundaryMetricsChart(boundaryPxTotal, avgBoundaryDensity, avgEntropy))
         if (boundaryByPair.isNotEmpty()) {
-            layout.add(propertySection("Контакты фаз (топ по длине границы)", buildBoundaryPairBars(boundaryByPair)))
+            val boundaryShares = boundaryByPair.entries
+                .sortedByDescending { it.value }
+                .take(8)
+                .map { it.key to (it.value / boundaryByPair.values.sum()) }
+            layout.add(
+                propertySection(
+                    "Контакты фаз (топ по длине границы)",
+                    buildInteractivePieChart("Контакты фаз по длине границы, %", boundaryShares)
+                )
+            )
         }
         return layout
     }
 
-    private fun buildInteractivePieChart(shares: List<Pair<String, Double>>): Component {
+    private fun buildInteractivePieChart(title: String, shares: List<Pair<String, Double>>): Component {
         if (shares.isEmpty()) return Paragraph("Нет фаз для диаграммы.")
         val colorMap = grainClassColorMapForCurrentDataset()
         val radius = 74.0
@@ -3092,12 +3101,10 @@ class MainView : VerticalLayout() {
         val svg = """
             <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
               <span style="font-size:var(--lumo-font-size-s);font-weight:600;">
-                Доли фаз по площади, %
+                $title
               </span>
               <svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Фазовый состав">
                 ${paths.joinToString("\n")}
-                <circle cx="$center" cy="$center" r="24" fill="rgba(0,0,0,0.65)"></circle>
-                <text x="$center" y="${center + 4}" text-anchor="middle" fill="white" font-size="10">Фазы</text>
               </svg>
             </div>
         """.trimIndent()
@@ -3158,31 +3165,6 @@ class MainView : VerticalLayout() {
                 }
             )
         }
-    }
-
-    private fun buildBoundaryPairBars(pairLengths: Map<String, Double>): Component {
-        val total = pairLengths.values.sum().takeIf { it > 0.0 } ?: return Paragraph("Нет данных по контактам фаз.")
-        val root = VerticalLayout().apply {
-            isPadding = false
-            isSpacing = true
-            setWidthFull()
-        }
-        pairLengths.entries
-            .sortedByDescending { it.value }
-            .take(5)
-            .forEach { (pair, length) ->
-                val share = (length / total).coerceIn(0.0, 1.0)
-                root.add(
-                    Span("$pair — ${"%.1f".format(Locale.US, share * 100.0)}%"),
-                    Div().apply {
-                        style["height"] = "10px"
-                        style["border-radius"] = "999px"
-                        style["background"] = "linear-gradient(90deg, var(--lumo-primary-color) ${share * 100.0}%, var(--lumo-contrast-20pct) ${share * 100.0}%)"
-                        setWidthFull()
-                    }
-                )
-            }
-        return root
     }
 
     private fun fallbackColorForPhase(phaseName: String): String {
