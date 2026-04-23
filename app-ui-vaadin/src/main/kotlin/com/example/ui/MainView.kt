@@ -54,9 +54,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.math.PI
 import kotlin.math.absoluteValue
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import javax.imageio.ImageIO
 
 @Route("")
@@ -2999,6 +3001,7 @@ class MainView : VerticalLayout() {
     private fun phaseStatisticsView(objects: List<DatasetObject>): Component {
         if (objects.isEmpty()) return Paragraph("Нет данных для статистики.")
         val areaByPhase = linkedMapOf<String, Double>()
+        val boundaryByPair = linkedMapOf<String, Double>()
         var boundaryPxTotal = 0.0
         var boundaryDensitySum = 0.0
         var boundaryEntropySum = 0.0
@@ -3015,6 +3018,14 @@ class MainView : VerticalLayout() {
                 }
             }
             obj.properties["phase_boundary_px"]?.toDoubleOrNull()?.let { boundaryPxTotal += it }
+            val boundaryPx = obj.properties["phase_boundary_px"]?.toDoubleOrNull()?.takeIf { it > 0.0 } ?: 0.0
+            val pairRoot = runCatching { jsonMapper.readTree(obj.properties["phase_boundary_pair_shares"].orEmpty()) }.getOrNull()
+            if (boundaryPx > 0.0 && pairRoot?.isObject == true) {
+                pairRoot.properties().asSequence().forEach { (pair, node) ->
+                    val share = node.asDouble(0.0).coerceIn(0.0, 1.0)
+                    boundaryByPair[pair] = (boundaryByPair[pair] ?: 0.0) + share * boundaryPx
+                }
+            }
             obj.properties["phase_boundary_density"]?.toDoubleOrNull()?.let {
                 boundaryDensitySum += it
                 boundaryObjects += 1
@@ -3033,10 +3044,7 @@ class MainView : VerticalLayout() {
             isSpacing = true
             setWidthFull()
         }
-        layout.add(buildPieChart(shares))
-        shares.forEach { (phase, share) ->
-            layout.add(Span("$phase: ${"%.1f".format(Locale.US, share * 100.0)}%"))
-        }
+        layout.add(buildInteractivePieChart(shares))
         val avgBoundaryDensity = if (boundaryObjects == 0) 0.0 else boundaryDensitySum / boundaryObjects.toDouble()
         val avgEntropy = if (boundaryObjects == 0) 0.0 else boundaryEntropySum / boundaryObjects.toDouble()
         layout.add(
@@ -3045,29 +3053,105 @@ class MainView : VerticalLayout() {
             Span("Средняя плотность границ (px/px): ${"%.4f".format(Locale.US, avgBoundaryDensity)}"),
             Span("Средняя энтропия контактов: ${"%.4f".format(Locale.US, avgEntropy)}")
         )
+        layout.add(buildBoundaryMetricsChart(boundaryPxTotal, avgBoundaryDensity, avgEntropy))
+        if (boundaryByPair.isNotEmpty()) {
+            layout.add(propertySection("Контакты фаз (топ по длине границы)", buildBoundaryPairBars(boundaryByPair)))
+        }
         return layout
     }
 
-    private fun buildPieChart(shares: List<Pair<String, Double>>): Component {
+    private fun buildInteractivePieChart(shares: List<Pair<String, Double>>): Component {
+        if (shares.isEmpty()) return Paragraph("Нет фаз для диаграммы.")
         val colorMap = grainClassColorMapForCurrentDataset()
-        var current = 0.0
-        val gradientStops = shares.map { (phase, share) ->
-            val start = current
-            val end = (current + share * 100.0).coerceAtMost(100.0)
-            current = end
+        val radius = 74.0
+        val center = 80.0
+        val sortedShares = shares.filter { it.second > 0.0 }
+        var startAngle = -PI / 2.0
+        val paths = sortedShares.map { (phase, share) ->
+            val sweep = (share * 2.0 * PI).coerceAtMost(2.0 * PI)
+            val endAngle = startAngle + sweep
             val color = normalizeMaskColor(colorMap[phase])?.let { "#" + it.removePrefix("0x") }
                 ?: fallbackColorForPhase(phase)
-            "$color ${"%.2f".format(Locale.US, start)}% ${"%.2f".format(Locale.US, end)}%"
+            val startX = center + radius * cos(startAngle)
+            val startY = center + radius * sin(startAngle)
+            val endX = center + radius * cos(endAngle)
+            val endY = center + radius * sin(endAngle)
+            val largeArc = if (sweep > PI) 1 else 0
+            val percent = "%.1f".format(Locale.US, share * 100.0)
+            val path = """
+                <path d="M $center $center L $startX $startY A $radius $radius 0 $largeArc 1 $endX $endY Z"
+                      fill="$color" stroke="#111" stroke-width="0.6">
+                  <title>$phase — $percent%</title>
+                </path>
+            """.trimIndent()
+            startAngle = endAngle
+            path
         }
-        val pie = Div().apply {
-            style["width"] = "156px"
-            style["height"] = "156px"
-            style["border-radius"] = "999px"
-            style["background"] = "conic-gradient(${gradientStops.joinToString(", ")})"
-            style["border"] = "1px solid var(--lumo-contrast-30pct)"
-            style["margin"] = "2px auto 8px auto"
+        val svg = """
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+              <svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Фазовый состав">
+                ${paths.joinToString("\n")}
+                <circle cx="$center" cy="$center" r="24" fill="rgba(0,0,0,0.65)"></circle>
+                <text x="$center" y="${center + 4}" text-anchor="middle" fill="white" font-size="10">Hover</text>
+              </svg>
+              <span style="font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);">
+                Наведите курсор на сектор, чтобы увидеть фазу и %
+              </span>
+            </div>
+        """.trimIndent()
+        return Div().apply {
+            element.setProperty("innerHTML", svg)
+            setWidthFull()
         }
-        return pie
+    }
+
+    private fun buildBoundaryMetricsChart(
+        boundaryPxTotal: Double,
+        avgBoundaryDensity: Double,
+        avgEntropy: Double
+    ): Component {
+        val maxPxReference = max(1.0, boundaryPxTotal)
+        val maxDensityReference = 1.0
+        val maxEntropyReference = 3.0
+        val rows = listOf(
+            "Σ границы" to (boundaryPxTotal / maxPxReference).coerceIn(0.0, 1.0),
+            "Плотность" to (avgBoundaryDensity / maxDensityReference).coerceIn(0.0, 1.0),
+            "Энтропия" to (avgEntropy / maxEntropyReference).coerceIn(0.0, 1.0)
+        )
+        return VerticalLayout().apply {
+            isPadding = false
+            isSpacing = true
+            setWidthFull()
+            rows.forEach { (label, value) ->
+                add(Span(label))
+                add(ProgressBar(0.0, 1.0, value).apply { setWidthFull() })
+            }
+        }
+    }
+
+    private fun buildBoundaryPairBars(pairLengths: Map<String, Double>): Component {
+        val total = pairLengths.values.sum().takeIf { it > 0.0 } ?: return Paragraph("Нет данных по контактам фаз.")
+        val root = VerticalLayout().apply {
+            isPadding = false
+            isSpacing = true
+            setWidthFull()
+        }
+        pairLengths.entries
+            .sortedByDescending { it.value }
+            .take(5)
+            .forEach { (pair, length) ->
+                val share = (length / total).coerceIn(0.0, 1.0)
+                root.add(
+                    Span("$pair — ${"%.1f".format(Locale.US, share * 100.0)}%"),
+                    Div().apply {
+                        style["height"] = "10px"
+                        style["border-radius"] = "999px"
+                        style["background"] = "linear-gradient(90deg, var(--lumo-primary-color) ${share * 100.0}%, var(--lumo-contrast-20pct) ${share * 100.0}%)"
+                        setWidthFull()
+                    }
+                )
+            }
+        return root
     }
 
     private fun fallbackColorForPhase(phaseName: String): String {
