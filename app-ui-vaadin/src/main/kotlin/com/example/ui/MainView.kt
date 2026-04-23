@@ -3127,10 +3127,13 @@ class MainView : VerticalLayout() {
             val outerPath = sectorPath(center, center, radius, startAngle, endAngle)
             val innerPath = sectorPath(center, center, innerRadius, startAngle, endAngle)
             val fragments = listOf(
-                """<path d="$outerPath" fill="$colorB" stroke="#111" stroke-width="0.6"></path>""",
-                """<path d="$innerPath" fill="$colorA" stroke="#111" stroke-width="0.3">
-                    <title>$pairName — $percent%</title>
-                   </path>""".trimIndent()
+                """
+                <g>
+                  <title>$pairName — $percent%</title>
+                  <path d="$outerPath" fill="$colorB" stroke="#111" stroke-width="0.6"></path>
+                  <path d="$innerPath" fill="$colorA" stroke="#111" stroke-width="0.3"></path>
+                </g>
+                """.trimIndent()
             )
             startAngle = endAngle
             fragments
