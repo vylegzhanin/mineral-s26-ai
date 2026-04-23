@@ -3233,14 +3233,22 @@ class MainView : VerticalLayout() {
     }
 
     private fun buildChartHeader(title: String, helpText: String): Component {
-        val helpDialog = Dialog().apply { add(Paragraph(helpText)) }
+        val titleLabel = Span(title).apply {
+            style["font-weight"] = "600"
+        }
         val helpButton = Button(VaadinIcon.QUESTION_CIRCLE_O.create()).apply {
             element.setAttribute("title", "Пояснение")
             style["padding"] = "0"
             style["min-width"] = "var(--lumo-size-m)"
-            addClickListener { helpDialog.open() }
+            style["background"] = "transparent"
+            style["box-shadow"] = "none"
+            style["border"] = "none"
         }
-        return HorizontalLayout(Span(title), helpButton).apply {
+        ContextMenu(helpButton).apply {
+            isOpenOnClick = true
+            addItem(helpText) {}
+        }
+        return HorizontalLayout(titleLabel, helpButton).apply {
             isPadding = false
             isSpacing = true
             alignItems = FlexComponent.Alignment.CENTER
