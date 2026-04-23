@@ -3134,7 +3134,7 @@ class MainView : VerticalLayout() {
                     """
                     <g>
                       <title>$pairName — $percent%</title>
-                      <path d="$outerPath" fill="#FFFFFF"></path>
+                      <path d="$outerPath" fill="#FFFFFF" stroke="#111" stroke-width="0.6"></path>
                     </g>
                     """.trimIndent()
                 )
