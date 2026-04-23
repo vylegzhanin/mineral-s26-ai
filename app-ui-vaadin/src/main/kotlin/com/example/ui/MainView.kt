@@ -3199,45 +3199,41 @@ class MainView : VerticalLayout() {
         val boundaryVsArea = if (totalArea <= 0.0) 0.0 else (boundaryPxTotal / totalArea).coerceIn(0.0, 1.0)
         val densityRatio = avgBoundaryDensity.coerceIn(0.0, 1.0)
         val entropyRatio = (avgEntropy / 3.0).coerceIn(0.0, 1.0)
-        val rows = listOf(
+        val bars = listOf(
             "Доля границ к площади" to boundaryVsArea,
             "Плотность границ (0..1)" to densityRatio,
             "Энтропия контактов (0..3)" to entropyRatio
         )
-        return VerticalLayout().apply {
-            isPadding = false
-            isSpacing = true
-            setWidthFull()
-            rows.forEach { (label, value) ->
-                add(buildMetricBarRow(label, value))
-            }
-        }
-    }
 
-    private fun buildMetricBarRow(
-        label: String,
-        normalizedValue: Double
-    ): Component {
-        val ratioText = "${"%.1f".format(Locale.US, normalizedValue * 100.0)}%"
+        val maxBarHeight = 92.0
+        val barWidth = 44
+        val gap = 18
+        val chartWidth = (bars.size * barWidth + (bars.size - 1) * gap)
+        val svgBars = bars.mapIndexed { index, (label, ratio) ->
+            val barHeight = maxBarHeight * ratio
+            val x = index * (barWidth + gap)
+            val y = maxBarHeight - barHeight
+            val percent = "%.1f".format(Locale.US, ratio * 100.0)
+            """
+                <g transform="translate($x,0)">
+                  <rect x="0" y="0" width="$barWidth" height="$maxBarHeight" fill="var(--lumo-contrast-10pct)" rx="6"></rect>
+                  <rect x="0" y="$y" width="$barWidth" height="$barHeight" fill="var(--lumo-primary-color)" rx="6"></rect>
+                  <text x="${barWidth / 2}" y="${y - 6}" text-anchor="middle" fill="var(--lumo-body-text-color)" font-size="10">$percent</text>
+                  <text x="${barWidth / 2}" y="${maxBarHeight + 14}" text-anchor="middle" fill="var(--lumo-secondary-text-color)" font-size="9">$label</text>
+                </g>
+            """.trimIndent()
+        }
+        val svg = """
+            <div style="display:flex;flex-direction:column;gap:6px;align-items:center;">
+              <span style="font-size:var(--lumo-font-size-s);font-weight:600;">Относительные метрики границ</span>
+              <svg viewBox="0 0 $chartWidth 110" width="$chartWidth" height="110" role="img" aria-label="Гистограмма метрик границ">
+                ${svgBars.joinToString("\n")}
+              </svg>
+            </div>
+        """.trimIndent()
         return Div().apply {
+            element.setProperty("innerHTML", svg)
             setWidthFull()
-            style["height"] = "24px"
-            style["border-radius"] = "8px"
-            style["position"] = "relative"
-            style["overflow"] = "hidden"
-            style["border"] = "1px solid var(--lumo-contrast-20pct)"
-            style["background"] = "linear-gradient(90deg, var(--lumo-primary-color) ${normalizedValue * 100.0}%, var(--lumo-contrast-20pct) ${normalizedValue * 100.0}%)"
-            add(
-                Span("$label: $ratioText").apply {
-                    style["position"] = "absolute"
-                    style["left"] = "8px"
-                    style["top"] = "2px"
-                    style["font-size"] = "var(--lumo-font-size-s)"
-                    style["font-weight"] = "600"
-                    style["color"] = "var(--lumo-base-color)"
-                    style["text-shadow"] = "0 1px 1px rgba(0,0,0,0.6)"
-                }
-            )
         }
     }
 
