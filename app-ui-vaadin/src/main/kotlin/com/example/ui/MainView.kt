@@ -3118,6 +3118,7 @@ class MainView : VerticalLayout() {
     private fun buildBoundaryContactPieChart(contactShares: List<Pair<String, Double>>): Component {
         if (contactShares.isEmpty()) return Paragraph("Нет данных по контактам фаз.")
         val colorMap = grainClassColorMapForCurrentDataset()
+        val hasOtherContactsSlice = contactShares.any { it.first == "Прочие контакты" }
         val radius = 74.0
         val innerRadius = radius / 2.0
         val center = 80.0
@@ -3125,22 +3126,33 @@ class MainView : VerticalLayout() {
         val paths = contactShares.filter { it.second > 0.0 }.flatMap { (pairName, share) ->
             val sweep = (share * 2.0 * PI).coerceAtMost(2.0 * PI)
             val endAngle = startAngle + sweep
-            val (phaseA, phaseB) = splitContactPair(pairName)
-            val colorA = normalizeMaskColor(colorMap[phaseA])?.let { "#" + it.removePrefix("0x") } ?: fallbackColorForPhase(phaseA)
-            val colorB = normalizeMaskColor(colorMap[phaseB])?.let { "#" + it.removePrefix("0x") } ?: fallbackColorForPhase(phaseB)
             val percent = "%.1f".format(Locale.US, share * 100.0)
 
             val outerPath = sectorPath(center, center, radius, startAngle, endAngle)
-            val innerPath = sectorPath(center, center, innerRadius, startAngle, endAngle)
-            val fragments = listOf(
-                """
-                <g>
-                  <title>$pairName — $percent%</title>
-                  <path d="$outerPath" fill="$colorB" stroke="#111" stroke-width="0.6"></path>
-                  <path d="$innerPath" fill="$colorA" stroke="#111" stroke-width="0.3"></path>
-                </g>
-                """.trimIndent()
-            )
+            val fragments = if (pairName == "Прочие контакты") {
+                listOf(
+                    """
+                    <g>
+                      <title>$pairName — $percent%</title>
+                      <path d="$outerPath" fill="#FFFFFF"></path>
+                    </g>
+                    """.trimIndent()
+                )
+            } else {
+                val (phaseA, phaseB) = splitContactPair(pairName)
+                val colorA = normalizeMaskColor(colorMap[phaseA])?.let { "#" + it.removePrefix("0x") } ?: fallbackColorForPhase(phaseA)
+                val colorB = normalizeMaskColor(colorMap[phaseB])?.let { "#" + it.removePrefix("0x") } ?: fallbackColorForPhase(phaseB)
+                val innerPath = sectorPath(center, center, innerRadius, startAngle, endAngle)
+                listOf(
+                    """
+                    <g>
+                      <title>$pairName — $percent%</title>
+                      <path d="$outerPath" fill="$colorB" stroke="#111" stroke-width="0.6"></path>
+                      <path d="$innerPath" fill="$colorA" stroke="#111" stroke-width="0.3"></path>
+                    </g>
+                    """.trimIndent()
+                )
+            }
             startAngle = endAngle
             fragments
         }
@@ -3150,9 +3162,7 @@ class MainView : VerticalLayout() {
               <span style="font-size:var(--lumo-font-size-s);font-weight:600;">
                 Контакты фаз по длине границы, %
               </span>
-              <span style="font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);">
-                Показаны топ-8 контактов и «Прочие»
-              </span>
+              ${if (hasOtherContactsSlice) "<span style=\"font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);\">Показаны топ-8 контактов и «Прочие»</span>" else ""}
               <svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Контакты фаз">
                 ${paths.joinToString("\n")}
               </svg>
