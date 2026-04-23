@@ -52,6 +52,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+import kotlin.math.PI
+import kotlin.math.absoluteValue
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -1835,6 +1837,7 @@ class MainView : VerticalLayout() {
                 grainCounter += 1
                 val phaseStatistics = collectPhaseStatistics(mask, component.points)
                 val objectClassInfo = resolveObjectClassInfo(phaseStatistics, legend)
+                val phaseBoundaryStats = collectPhaseBoundaryStatistics(mask, component.points, legend)
                 val previewFileName = "grain-$suffix-$grainCounter.png"
                 val previewPath = cacheDir.resolve(previewFileName)
                 Files.write(previewPath, buildMaskedCrop(source, component))
@@ -1860,6 +1863,11 @@ class MainView : VerticalLayout() {
                         "object_phase_type" to objectClassInfo.phaseType,
                         "phase_count" to phaseStatistics.size.toString(),
                         "phase_area_shares" to formatPhaseAreaShares(phaseStatistics, legend),
+                        "phase_boundary_px" to phaseBoundaryStats.totalBoundaryEdges.toString(),
+                        "phase_boundary_density" to "%.6f".format(Locale.US, phaseBoundaryStats.boundaryDensity),
+                        "phase_boundary_pair_shares" to phaseBoundaryStats.pairSharesJson,
+                        "phase_boundary_dominant_pair" to phaseBoundaryStats.dominantPair,
+                        "phase_boundary_entropy" to "%.6f".format(Locale.US, phaseBoundaryStats.boundaryEntropy),
                         "area_px" to phaseStatistics.values.sum().toString(),
                         "mask_crop_file" to maskPreviewFileName,
                         "crop_preview_file" to cropPreviewFileName,
@@ -1969,6 +1977,53 @@ class MainView : VerticalLayout() {
             stats[color] = (stats[color] ?: 0) + 1
         }
         return stats
+    }
+
+    private fun collectPhaseBoundaryStatistics(
+        mask: BufferedImage,
+        points: List<Point>,
+        legend: Map<Int, String>
+    ): PhaseBoundaryStats {
+        if (points.isEmpty()) return PhaseBoundaryStats.EMPTY
+        val pointSet = points.asSequence().map { it.x to it.y }.toHashSet()
+        val boundaryByPair = linkedMapOf<String, Int>()
+        var totalBoundaryEdges = 0
+
+        points.forEach { point ->
+            val color = mask.rgbNoAlpha(point.x, point.y)
+            if (color == 0x000000) return@forEach
+            listOf(point.x + 1 to point.y, point.x to point.y + 1).forEach { (nx, ny) ->
+                if ((nx to ny) !in pointSet) return@forEach
+                val neighborColor = mask.rgbNoAlpha(nx, ny)
+                if (neighborColor == color || neighborColor == 0x000000) return@forEach
+                totalBoundaryEdges += 1
+                val pair = listOf(
+                    legend[color] ?: "Unknown(${toHexColor(color)})",
+                    legend[neighborColor] ?: "Unknown(${toHexColor(neighborColor)})"
+                ).sorted().joinToString(" | ")
+                boundaryByPair[pair] = (boundaryByPair[pair] ?: 0) + 1
+            }
+        }
+
+        if (totalBoundaryEdges == 0) return PhaseBoundaryStats.EMPTY
+
+        val pairShares = boundaryByPair.entries.sortedByDescending { it.value }.associate { (pair, count) ->
+            pair to count.toDouble() / totalBoundaryEdges.toDouble()
+        }
+        val pairSharesJson = pairShares.entries.joinToString(prefix = "{", postfix = "}") { (pair, share) ->
+            "\"$pair\":${"%.6f".format(Locale.US, share)}"
+        }
+        val dominantPair = boundaryByPair.maxByOrNull { it.value }?.key.orEmpty()
+        val boundaryEntropy = pairShares.values.fold(0.0) { acc, share ->
+            if (share <= 0.0) acc else acc - share * (kotlin.math.ln(share) / kotlin.math.ln(2.0))
+        }
+        return PhaseBoundaryStats(
+            totalBoundaryEdges = totalBoundaryEdges,
+            boundaryDensity = totalBoundaryEdges.toDouble() / points.size.toDouble(),
+            pairSharesJson = pairSharesJson,
+            dominantPair = dominantPair,
+            boundaryEntropy = boundaryEntropy
+        )
     }
 
     private fun resolveObjectClassInfo(
@@ -2453,7 +2508,10 @@ class MainView : VerticalLayout() {
             return
         }
         if (obj == null) {
-            propertyEditor.add(Paragraph("Выберите объект, чтобы увидеть и отредактировать его свойства."))
+            propertyEditor.add(
+                buildStatisticsPrototypePanel(),
+                Paragraph("Выберите объект, чтобы увидеть и отредактировать его свойства.")
+            )
             return
         }
         propertyEditor.add(
@@ -2894,6 +2952,118 @@ class MainView : VerticalLayout() {
         }
     }
 
+    private fun buildStatisticsPrototypePanel(): Component {
+        val sections = mutableListOf<Component>()
+        selectedProject?.let { project ->
+            sections += propertySection(
+                "Статистика проекта: ${project.name}",
+                phaseStatisticsView(project.objects)
+            )
+            val batchObjects = projects.filter { it.batch == project.batch }.flatMap { it.objects }
+            sections += propertySection(
+                "Статистика партии: ${project.batch}",
+                phaseStatisticsView(batchObjects)
+            )
+        }
+        selectedCollection?.let { collection ->
+            sections += propertySection(
+                "Статистика коллекции: ${collection.name}",
+                phaseStatisticsView(collection.objects)
+            )
+        }
+        if (sections.isEmpty()) {
+            sections += propertySection("Статистика", Paragraph("Выберите проект или коллекцию для просмотра статистики."))
+        }
+        return VerticalLayout(*sections.toTypedArray()).apply {
+            isPadding = false
+            isSpacing = true
+            setWidthFull()
+        }
+    }
+
+    private fun phaseStatisticsView(objects: List<DatasetObject>): Component {
+        if (objects.isEmpty()) return Paragraph("Нет данных для статистики.")
+        val areaByPhase = linkedMapOf<String, Double>()
+        var boundaryPxTotal = 0.0
+        var boundaryDensitySum = 0.0
+        var boundaryEntropySum = 0.0
+        var boundaryObjects = 0
+
+        objects.forEach { obj ->
+            val areaPx = obj.properties["area_px"]?.toDoubleOrNull()?.takeIf { it > 0.0 } ?: 1.0
+            val root = runCatching { jsonMapper.readTree(obj.properties["phase_area_shares"].orEmpty()) }.getOrNull()
+            if (root?.isObject == true) {
+                root.properties().asSequence().forEach { (phaseName, node) ->
+                    val share = node.asDouble(0.0)
+                    val normalized = if (share <= 1.0) share else share / 100.0
+                    areaByPhase[phaseName] = (areaByPhase[phaseName] ?: 0.0) + normalized * areaPx
+                }
+            }
+            obj.properties["phase_boundary_px"]?.toDoubleOrNull()?.let { boundaryPxTotal += it }
+            obj.properties["phase_boundary_density"]?.toDoubleOrNull()?.let {
+                boundaryDensitySum += it
+                boundaryObjects += 1
+            }
+            obj.properties["phase_boundary_entropy"]?.toDoubleOrNull()?.let { boundaryEntropySum += it }
+        }
+
+        val totalArea = areaByPhase.values.sum()
+        if (totalArea <= 0.0) return Paragraph("Нет фазовых долей для диаграммы.")
+        val shares = areaByPhase.entries
+            .map { it.key to (it.value / totalArea) }
+            .sortedByDescending { it.second }
+
+        val layout = VerticalLayout().apply {
+            isPadding = false
+            isSpacing = true
+            setWidthFull()
+        }
+        layout.add(buildPieChart(shares))
+        shares.forEach { (phase, share) ->
+            layout.add(Span("$phase: ${"%.1f".format(Locale.US, share * 100.0)}%"))
+        }
+        val avgBoundaryDensity = if (boundaryObjects == 0) 0.0 else boundaryDensitySum / boundaryObjects.toDouble()
+        val avgEntropy = if (boundaryObjects == 0) 0.0 else boundaryEntropySum / boundaryObjects.toDouble()
+        layout.add(
+            Hr(),
+            Span("Σ длина межфазных границ (px): ${"%.0f".format(Locale.US, boundaryPxTotal)}"),
+            Span("Средняя плотность границ (px/px): ${"%.4f".format(Locale.US, avgBoundaryDensity)}"),
+            Span("Средняя энтропия контактов: ${"%.4f".format(Locale.US, avgEntropy)}")
+        )
+        return layout
+    }
+
+    private fun buildPieChart(shares: List<Pair<String, Double>>): Component {
+        val colorMap = grainClassColorMapForCurrentDataset()
+        var current = 0.0
+        val gradientStops = shares.map { (phase, share) ->
+            val start = current
+            val end = (current + share * 100.0).coerceAtMost(100.0)
+            current = end
+            val color = normalizeMaskColor(colorMap[phase])?.let { "#" + it.removePrefix("0x") }
+                ?: fallbackColorForPhase(phase)
+            "$color ${"%.2f".format(Locale.US, start)}% ${"%.2f".format(Locale.US, end)}%"
+        }
+        val pie = Div().apply {
+            style["width"] = "156px"
+            style["height"] = "156px"
+            style["border-radius"] = "999px"
+            style["background"] = "conic-gradient(${gradientStops.joinToString(", ")})"
+            style["border"] = "1px solid var(--lumo-contrast-30pct)"
+            style["margin"] = "2px auto 8px auto"
+        }
+        return pie
+    }
+
+    private fun fallbackColorForPhase(phaseName: String): String {
+        val hue = (phaseName.hashCode().toLong().absoluteValue % 360).toInt()
+        val angle = hue.toDouble() * PI / 180.0
+        val r = (128 + 80 * kotlin.math.cos(angle)).roundToInt().coerceIn(40, 230)
+        val g = (128 + 80 * kotlin.math.cos(angle + 2.094)).roundToInt().coerceIn(40, 230)
+        val b = (128 + 80 * kotlin.math.cos(angle + 4.188)).roundToInt().coerceIn(40, 230)
+        return "#%02X%02X%02X".format(r, g, b)
+    }
+
     private fun availableCardFieldsForPanel(): List<String> {
         val projectFields = activeObjects()
             .asSequence()
@@ -3027,6 +3197,24 @@ private data class ObjectClassInfo(
     val classColorHex: String,
     val phaseType: String
 )
+
+private data class PhaseBoundaryStats(
+    val totalBoundaryEdges: Int,
+    val boundaryDensity: Double,
+    val pairSharesJson: String,
+    val dominantPair: String,
+    val boundaryEntropy: Double
+) {
+    companion object {
+        val EMPTY = PhaseBoundaryStats(
+            totalBoundaryEdges = 0,
+            boundaryDensity = 0.0,
+            pairSharesJson = "{}",
+            dominantPair = "",
+            boundaryEntropy = 0.0
+        )
+    }
+}
 
 private data class ImportProgress(
     val message: String,
