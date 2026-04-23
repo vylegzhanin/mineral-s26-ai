@@ -3205,9 +3205,24 @@ class MainView : VerticalLayout() {
     }
 
     private fun buildBoundaryPropertyHistograms(objects: List<DatasetObject>): Component {
-        val densityValues = objects.mapNotNull { it.properties["phase_boundary_density"]?.toDoubleOrNull() }
-        val entropyValues = objects.mapNotNull { it.properties["phase_boundary_entropy"]?.toDoubleOrNull() }
-        return buildBoundaryMetricsChart(densityValues, entropyValues)
+        val multiPhaseObjects = objects.filter { it.properties["object_phase_type"]?.trim()?.lowercase() == "multi_phase" }
+        val singlePhaseCount = (objects.size - multiPhaseObjects.size).coerceAtLeast(0)
+        val densityValues = multiPhaseObjects.mapNotNull { it.properties["phase_boundary_density"]?.toDoubleOrNull() }
+        val entropyValues = multiPhaseObjects.mapNotNull { it.properties["phase_boundary_entropy"]?.toDoubleOrNull() }
+        val chart = buildBoundaryMetricsChart(densityValues, entropyValues)
+        return VerticalLayout(
+            Span("Для распределений учитываются только многофазные объекты: ${multiPhaseObjects.size} из ${objects.size}."),
+            if (singlePhaseCount > 0) {
+                Span("Однофазные объекты (${singlePhaseCount}) исключены, чтобы не сжимать гистограмму к нулевому столбцу.")
+            } else {
+                Span("Однофазных объектов нет.")
+            },
+            chart
+        ).apply {
+            isPadding = false
+            isSpacing = true
+            setWidthFull()
+        }
     }
 
     private fun histogramSvg(title: String, values: List<Double>, bins: Int = 8): String {
