@@ -3061,12 +3061,7 @@ class MainView : VerticalLayout() {
                 .sortedByDescending { it.value }
                 .take(8)
                 .map { it.key to (it.value / boundaryByPair.values.sum()) }
-            layout.add(
-                propertySection(
-                    "Контакты фаз (топ по длине границы)",
-                    buildInteractivePieChart("Контакты фаз по длине границы, %", boundaryShares)
-                )
-            )
+            layout.add(buildBoundaryContactPieChart(boundaryShares))
         }
         return layout
     }
@@ -3112,6 +3107,71 @@ class MainView : VerticalLayout() {
             element.setProperty("innerHTML", svg)
             setWidthFull()
         }
+    }
+
+    private fun buildBoundaryContactPieChart(contactShares: List<Pair<String, Double>>): Component {
+        if (contactShares.isEmpty()) return Paragraph("Нет данных по контактам фаз.")
+        val colorMap = grainClassColorMapForCurrentDataset()
+        val radius = 74.0
+        val innerRadius = radius / 2.0
+        val center = 80.0
+        var startAngle = -PI / 2.0
+        val paths = contactShares.filter { it.second > 0.0 }.flatMap { (pairName, share) ->
+            val sweep = (share * 2.0 * PI).coerceAtMost(2.0 * PI)
+            val endAngle = startAngle + sweep
+            val (phaseA, phaseB) = splitContactPair(pairName)
+            val colorA = normalizeMaskColor(colorMap[phaseA])?.let { "#" + it.removePrefix("0x") } ?: fallbackColorForPhase(phaseA)
+            val colorB = normalizeMaskColor(colorMap[phaseB])?.let { "#" + it.removePrefix("0x") } ?: fallbackColorForPhase(phaseB)
+            val percent = "%.1f".format(Locale.US, share * 100.0)
+
+            val outerPath = sectorPath(center, center, radius, startAngle, endAngle)
+            val innerPath = sectorPath(center, center, innerRadius, startAngle, endAngle)
+            val fragments = listOf(
+                """<path d="$outerPath" fill="$colorB" stroke="#111" stroke-width="0.6"></path>""",
+                """<path d="$innerPath" fill="$colorA" stroke="#111" stroke-width="0.3">
+                    <title>$pairName — $percent%</title>
+                   </path>""".trimIndent()
+            )
+            startAngle = endAngle
+            fragments
+        }
+
+        val svg = """
+            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+              <span style="font-size:var(--lumo-font-size-s);font-weight:600;">
+                Контакты фаз по длине границы, %
+              </span>
+              <svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Контакты фаз">
+                ${paths.joinToString("\n")}
+              </svg>
+            </div>
+        """.trimIndent()
+        return Div().apply {
+            element.setProperty("innerHTML", svg)
+            setWidthFull()
+        }
+    }
+
+    private fun sectorPath(
+        cx: Double,
+        cy: Double,
+        radius: Double,
+        startAngle: Double,
+        endAngle: Double
+    ): String {
+        val startX = cx + radius * cos(startAngle)
+        val startY = cy + radius * sin(startAngle)
+        val endX = cx + radius * cos(endAngle)
+        val endY = cy + radius * sin(endAngle)
+        val largeArc = if ((endAngle - startAngle) > PI) 1 else 0
+        return "M $cx $cy L $startX $startY A $radius $radius 0 $largeArc 1 $endX $endY Z"
+    }
+
+    private fun splitContactPair(pairName: String): Pair<String, String> {
+        val tokens = pairName.split("|").map { it.trim() }.filter { it.isNotBlank() }
+        val first = tokens.getOrNull(0) ?: pairName
+        val second = tokens.getOrNull(1) ?: first
+        return first to second
     }
 
     private fun buildBoundaryMetricsChart(
