@@ -3085,16 +3085,24 @@ class MainView : VerticalLayout() {
         }
         val svg = """
             <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-              <span style="font-size:var(--lumo-font-size-s);font-weight:600;">
-                $title
-              </span>
               <svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Фазовый состав">
                 ${paths.joinToString("\n")}
               </svg>
             </div>
         """.trimIndent()
-        return Div().apply {
+        val chart = Div().apply {
             element.setProperty("innerHTML", svg)
+            setWidthFull()
+        }
+        return VerticalLayout(
+            buildChartHeader(
+                title = title,
+                helpText = "Круг показывает доли фаз по площади в текущей выборке. Наведите курсор на сектор, чтобы увидеть фазу и процент."
+            ),
+            chart
+        ).apply {
+            isPadding = false
+            isSpacing = true
             setWidthFull()
         }
     }
@@ -3143,17 +3151,26 @@ class MainView : VerticalLayout() {
 
         val svg = """
             <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-              <span style="font-size:var(--lumo-font-size-s);font-weight:600;">
-                Контакты фаз по длине границы, %
-              </span>
-              ${if (hasOtherContactsSlice) "<span style=\"font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);\">Показаны топ-8 контактов и «Прочие»</span>" else ""}
               <svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Контакты фаз">
                 ${paths.joinToString("\n")}
               </svg>
             </div>
         """.trimIndent()
-        return Div().apply {
+        val chart = Div().apply {
             element.setProperty("innerHTML", svg)
+            setWidthFull()
+        }
+        val helpText = if (hasOtherContactsSlice) {
+            "Диаграмма показывает топ-8 контактов фаз по длине границы и агрегированный сектор «Прочие». Цвет от центра — первая фаза пары, от середины к краю — вторая."
+        } else {
+            "Диаграмма показывает контакты фаз по длине границы. Цвет от центра — первая фаза пары, от середины к краю — вторая."
+        }
+        return VerticalLayout(
+            buildChartHeader("Контакты фаз по длине границы, %", helpText),
+            chart
+        ).apply {
+            isPadding = false
+            isSpacing = true
             setWidthFull()
         }
     }
@@ -3195,15 +3212,39 @@ class MainView : VerticalLayout() {
         val svg = """
             <div style="display:flex;flex-direction:column;gap:6px;align-items:center;">
               $densityHistogram
-              <span style="font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);text-align:center;">
-                Энтропия контактов показывает разнообразие пар фаз внутри зерна:
-                0 — преобладает один тип контакта, большее значение — более смешанная контактная структура.
-              </span>
               $entropyHistogram
             </div>
         """.trimIndent()
-        return Div().apply {
+        val chart = Div().apply {
             element.setProperty("innerHTML", svg)
+            setWidthFull()
+        }
+        return VerticalLayout(
+            buildChartHeader(
+                "Распределения метрик границ (многофазные объекты)",
+                "Гистограммы строятся только по многофазным объектам. Плотность: доля границ в объекте. Энтропия контактов: 0 — один тип контакта, выше — более разнообразные контакты."
+            ),
+            chart
+        ).apply {
+            isPadding = false
+            isSpacing = true
+            setWidthFull()
+        }
+    }
+
+    private fun buildChartHeader(title: String, helpText: String): Component {
+        val helpDialog = Dialog().apply { add(Paragraph(helpText)) }
+        val helpButton = Button(VaadinIcon.QUESTION_CIRCLE_O.create()).apply {
+            element.setAttribute("title", "Пояснение")
+            style["padding"] = "0"
+            style["min-width"] = "var(--lumo-size-m)"
+            addClickListener { helpDialog.open() }
+        }
+        return HorizontalLayout(Span(title), helpButton).apply {
+            isPadding = false
+            isSpacing = true
+            alignItems = FlexComponent.Alignment.CENTER
+            style["justify-content"] = "space-between"
             setWidthFull()
         }
     }
