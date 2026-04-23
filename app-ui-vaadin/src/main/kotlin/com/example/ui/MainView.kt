@@ -3209,7 +3209,9 @@ class MainView : VerticalLayout() {
 
     private fun buildBoundaryMetricsChart(
         boundaryDensityValues: List<Double>,
-        entropyValues: List<Double>
+        entropyValues: List<Double>,
+        multiPhaseCount: Int,
+        totalObjectsCount: Int
     ): Component {
         val densityHistogram = histogramSvg(
             title = "Распределение плотности границ (объекты)",
@@ -3232,7 +3234,12 @@ class MainView : VerticalLayout() {
         return VerticalLayout(
             buildChartHeader(
                 "Распределения метрик границ (многофазные объекты)",
-                "Гистограммы строятся только по многофазным объектам. Плотность: доля границ в объекте. Энтропия контактов: 0 — один тип контакта, выше — более разнообразные контакты."
+                """
+                Гистограммы строятся только по многофазным объектам: $multiPhaseCount из $totalObjectsCount.
+                Однофазные объекты исключены, чтобы не сжимать распределение к нулевому столбцу.
+                Плотность: доля границ в объекте.
+                Энтропия контактов: 0 — один тип контакта, выше — более разнообразные контакты.
+                """.trimIndent()
             ),
             chart
         ).apply {
@@ -3276,23 +3283,14 @@ class MainView : VerticalLayout() {
 
     private fun buildBoundaryPropertyHistograms(objects: List<DatasetObject>): Component {
         val multiPhaseObjects = objects.filter { it.properties["object_phase_type"]?.trim()?.lowercase() == "multi_phase" }
-        val singlePhaseCount = (objects.size - multiPhaseObjects.size).coerceAtLeast(0)
         val densityValues = multiPhaseObjects.mapNotNull { it.properties["phase_boundary_density"]?.toDoubleOrNull() }
         val entropyValues = multiPhaseObjects.mapNotNull { it.properties["phase_boundary_entropy"]?.toDoubleOrNull() }
-        val chart = buildBoundaryMetricsChart(densityValues, entropyValues)
-        return VerticalLayout(
-            Span("Для распределений учитываются только многофазные объекты: ${multiPhaseObjects.size} из ${objects.size}."),
-            if (singlePhaseCount > 0) {
-                Span("Однофазные объекты (${singlePhaseCount}) исключены, чтобы не сжимать гистограмму к нулевому столбцу.")
-            } else {
-                Span("Однофазных объектов нет.")
-            },
-            chart
-        ).apply {
-            isPadding = false
-            isSpacing = true
-            setWidthFull()
-        }
+        return buildBoundaryMetricsChart(
+            boundaryDensityValues = densityValues,
+            entropyValues = entropyValues,
+            multiPhaseCount = multiPhaseObjects.size,
+            totalObjectsCount = objects.size
+        )
     }
 
     private fun histogramSvg(title: String, values: List<Double>, bins: Int = 8): String {
