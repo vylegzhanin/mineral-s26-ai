@@ -3049,13 +3049,7 @@ class MainView : VerticalLayout() {
         layout.add(buildInteractivePieChart("Доли фаз по площади, %", shares))
         val avgBoundaryDensity = if (boundaryObjects == 0) 0.0 else boundaryDensitySum / boundaryObjects.toDouble()
         val avgEntropy = if (boundaryObjects == 0) 0.0 else boundaryEntropySum / boundaryObjects.toDouble()
-        layout.add(
-            Hr(),
-            Span("Σ длина межфазных границ (px): ${"%.0f".format(Locale.US, boundaryPxTotal)}"),
-            Span("Средняя плотность границ (px/px): ${"%.4f".format(Locale.US, avgBoundaryDensity)}"),
-            Span("Средняя энтропия контактов: ${"%.4f".format(Locale.US, avgEntropy)}")
-        )
-        layout.add(buildBoundaryMetricsChart(boundaryPxTotal, avgBoundaryDensity, avgEntropy))
+        layout.add(Hr(), buildBoundaryMetricsChart(boundaryPxTotal, avgBoundaryDensity, avgEntropy, totalArea))
         if (boundaryByPair.isNotEmpty()) {
             val topBoundaryShares = boundaryByPair.entries
                 .sortedByDescending { it.value }
@@ -3199,34 +3193,32 @@ class MainView : VerticalLayout() {
     private fun buildBoundaryMetricsChart(
         boundaryPxTotal: Double,
         avgBoundaryDensity: Double,
-        avgEntropy: Double
+        avgEntropy: Double,
+        totalArea: Double
     ): Component {
-        val maxPxReference = max(1.0, boundaryPxTotal)
-        val maxDensityReference = 1.0
-        val maxEntropyReference = 3.0
+        val boundaryVsArea = if (totalArea <= 0.0) 0.0 else (boundaryPxTotal / totalArea).coerceIn(0.0, 1.0)
+        val densityRatio = avgBoundaryDensity.coerceIn(0.0, 1.0)
+        val entropyRatio = (avgEntropy / 3.0).coerceIn(0.0, 1.0)
         val rows = listOf(
-            Triple("Σ границы", boundaryPxTotal, "%.0f px") to (boundaryPxTotal / maxPxReference).coerceIn(0.0, 1.0),
-            Triple("Плотность", avgBoundaryDensity, "%.4f") to (avgBoundaryDensity / maxDensityReference).coerceIn(0.0, 1.0),
-            Triple("Энтропия", avgEntropy, "%.4f") to (avgEntropy / maxEntropyReference).coerceIn(0.0, 1.0)
+            "Доля границ к площади" to boundaryVsArea,
+            "Плотность границ (0..1)" to densityRatio,
+            "Энтропия контактов (0..3)" to entropyRatio
         )
         return VerticalLayout().apply {
             isPadding = false
             isSpacing = true
             setWidthFull()
-            rows.forEach { (meta, value) ->
-                val (label, numericValue, format) = meta
-                add(buildMetricBarRow(label, numericValue, format, value))
+            rows.forEach { (label, value) ->
+                add(buildMetricBarRow(label, value))
             }
         }
     }
 
     private fun buildMetricBarRow(
         label: String,
-        numericValue: Double,
-        valueFormat: String,
         normalizedValue: Double
     ): Component {
-        val textValue = String.format(Locale.US, valueFormat, numericValue)
+        val ratioText = "${"%.1f".format(Locale.US, normalizedValue * 100.0)}%"
         return Div().apply {
             setWidthFull()
             style["height"] = "24px"
@@ -3236,7 +3228,7 @@ class MainView : VerticalLayout() {
             style["border"] = "1px solid var(--lumo-contrast-20pct)"
             style["background"] = "linear-gradient(90deg, var(--lumo-primary-color) ${normalizedValue * 100.0}%, var(--lumo-contrast-20pct) ${normalizedValue * 100.0}%)"
             add(
-                Span("$label: $textValue").apply {
+                Span("$label: $ratioText").apply {
                     style["position"] = "absolute"
                     style["left"] = "8px"
                     style["top"] = "2px"
