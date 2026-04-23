@@ -3057,10 +3057,16 @@ class MainView : VerticalLayout() {
         )
         layout.add(buildBoundaryMetricsChart(boundaryPxTotal, avgBoundaryDensity, avgEntropy))
         if (boundaryByPair.isNotEmpty()) {
-            val boundaryShares = boundaryByPair.entries
+            val topBoundaryShares = boundaryByPair.entries
                 .sortedByDescending { it.value }
                 .take(8)
                 .map { it.key to (it.value / boundaryByPair.values.sum()) }
+            val topSum = topBoundaryShares.sumOf { it.second }
+            val boundaryShares = topBoundaryShares.toMutableList()
+            val otherShare = (1.0 - topSum).coerceAtLeast(0.0)
+            if (otherShare > 0.0001) {
+                boundaryShares += "Прочие контакты" to otherShare
+            }
             layout.add(buildBoundaryContactPieChart(boundaryShares))
         }
         return layout
@@ -3143,6 +3149,9 @@ class MainView : VerticalLayout() {
             <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
               <span style="font-size:var(--lumo-font-size-s);font-weight:600;">
                 Контакты фаз по длине границы, %
+              </span>
+              <span style="font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);">
+                Показаны топ-8 контактов и «Прочие»
               </span>
               <svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Контакты фаз">
                 ${paths.joinToString("\n")}
