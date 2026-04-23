@@ -7,6 +7,7 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.checkbox.Checkbox
 import com.vaadin.flow.component.combobox.ComboBox
 import com.vaadin.flow.component.datepicker.DatePicker
+import com.vaadin.flow.component.contextmenu.ContextMenu
 import com.vaadin.flow.component.contextmenu.MenuItem
 import com.vaadin.flow.component.contextmenu.SubMenu
 import com.vaadin.flow.component.dialog.Dialog
@@ -3161,9 +3162,18 @@ class MainView : VerticalLayout() {
             setWidthFull()
         }
         val helpText = if (hasOtherContactsSlice) {
-            "Диаграмма показывает топ-8 контактов фаз по длине границы и агрегированный сектор «Прочие». Цвет от центра — первая фаза пары, от середины к краю — вторая."
+            """
+            Диаграмма показывает топ-8 контактов фаз по длине границы
+            и агрегированный сектор «Прочие».
+            Цвет от центра — первая фаза пары,
+            от середины к краю — вторая.
+            """.trimIndent()
         } else {
-            "Диаграмма показывает контакты фаз по длине границы. Цвет от центра — первая фаза пары, от середины к краю — вторая."
+            """
+            Диаграмма показывает контакты фаз по длине границы.
+            Цвет от центра — первая фаза пары,
+            от середины к краю — вторая.
+            """.trimIndent()
         }
         return VerticalLayout(
             buildChartHeader("Контакты фаз по длине границы, %", helpText),
@@ -3244,9 +3254,16 @@ class MainView : VerticalLayout() {
             style["box-shadow"] = "none"
             style["border"] = "none"
         }
+        val popupText = Div().apply {
+            text = helpText
+            style["white-space"] = "pre-line"
+            style["max-width"] = "320px"
+            style["font-size"] = "var(--lumo-font-size-s)"
+            style["padding"] = "4px"
+        }
         ContextMenu(helpButton).apply {
             isOpenOnClick = true
-            addItem(helpText) {}
+            add(popupText)
         }
         return HorizontalLayout(titleLabel, helpButton).apply {
             isPadding = false
