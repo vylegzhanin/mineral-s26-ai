@@ -3195,6 +3195,10 @@ class MainView : VerticalLayout() {
         val svg = """
             <div style="display:flex;flex-direction:column;gap:6px;align-items:center;">
               $densityHistogram
+              <span style="font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);text-align:center;">
+                Энтропия контактов показывает разнообразие пар фаз внутри зерна:
+                0 — преобладает один тип контакта, большее значение — более смешанная контактная структура.
+              </span>
               $entropyHistogram
             </div>
         """.trimIndent()
