@@ -2502,20 +2502,22 @@ class MainView : VerticalLayout() {
     private fun updateRightPanel() {
         propertyEditor.removeAll()
         val obj = selectedObject
-        cardFieldsPanelTitle.text = "Свойства объекта"
         propertyEditor.isVisible = true
         cardFieldsPanel.isVisible = false
         if (selectedObjectIds.size > 1) {
+            cardFieldsPanelTitle.text = "Свойства объекта"
             propertyEditor.add(Paragraph("Выбрано объектов: ${selectedObjectIds.size}. Свойства доступны только для одиночного выбора."))
             return
         }
         if (obj == null) {
+            cardFieldsPanelTitle.text = "Статистика выборки"
             propertyEditor.add(
                 buildStatisticsPrototypePanel(),
                 Paragraph("Выберите объект, чтобы увидеть и отредактировать его свойства.")
             )
             return
         }
+        cardFieldsPanelTitle.text = "Свойства объекта"
         propertyEditor.add(
             propertySection("Основные параметры", buildPropertyForm(obj)),
             propertySection("Расширенные атрибуты", buildAdvancedControls(obj))
@@ -3089,14 +3091,14 @@ class MainView : VerticalLayout() {
         }
         val svg = """
             <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+              <span style="font-size:var(--lumo-font-size-s);font-weight:600;">
+                Доли фаз по площади, %
+              </span>
               <svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Фазовый состав">
                 ${paths.joinToString("\n")}
                 <circle cx="$center" cy="$center" r="24" fill="rgba(0,0,0,0.65)"></circle>
-                <text x="$center" y="${center + 4}" text-anchor="middle" fill="white" font-size="10">Hover</text>
+                <text x="$center" y="${center + 4}" text-anchor="middle" fill="white" font-size="10">Фазы</text>
               </svg>
-              <span style="font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);">
-                Наведите курсор на сектор, чтобы увидеть фазу и %
-              </span>
             </div>
         """.trimIndent()
         return Div().apply {
@@ -3114,18 +3116,47 @@ class MainView : VerticalLayout() {
         val maxDensityReference = 1.0
         val maxEntropyReference = 3.0
         val rows = listOf(
-            "Σ границы" to (boundaryPxTotal / maxPxReference).coerceIn(0.0, 1.0),
-            "Плотность" to (avgBoundaryDensity / maxDensityReference).coerceIn(0.0, 1.0),
-            "Энтропия" to (avgEntropy / maxEntropyReference).coerceIn(0.0, 1.0)
+            Triple("Σ границы", boundaryPxTotal, "%.0f px") to (boundaryPxTotal / maxPxReference).coerceIn(0.0, 1.0),
+            Triple("Плотность", avgBoundaryDensity, "%.4f") to (avgBoundaryDensity / maxDensityReference).coerceIn(0.0, 1.0),
+            Triple("Энтропия", avgEntropy, "%.4f") to (avgEntropy / maxEntropyReference).coerceIn(0.0, 1.0)
         )
         return VerticalLayout().apply {
             isPadding = false
             isSpacing = true
             setWidthFull()
-            rows.forEach { (label, value) ->
-                add(Span(label))
-                add(ProgressBar(0.0, 1.0, value).apply { setWidthFull() })
+            rows.forEach { (meta, value) ->
+                val (label, numericValue, format) = meta
+                add(buildMetricBarRow(label, numericValue, format, value))
             }
+        }
+    }
+
+    private fun buildMetricBarRow(
+        label: String,
+        numericValue: Double,
+        valueFormat: String,
+        normalizedValue: Double
+    ): Component {
+        val textValue = String.format(Locale.US, valueFormat, numericValue)
+        return Div().apply {
+            setWidthFull()
+            style["height"] = "24px"
+            style["border-radius"] = "8px"
+            style["position"] = "relative"
+            style["overflow"] = "hidden"
+            style["border"] = "1px solid var(--lumo-contrast-20pct)"
+            style["background"] = "linear-gradient(90deg, var(--lumo-primary-color) ${normalizedValue * 100.0}%, var(--lumo-contrast-20pct) ${normalizedValue * 100.0}%)"
+            add(
+                Span("$label: $textValue").apply {
+                    style["position"] = "absolute"
+                    style["left"] = "8px"
+                    style["top"] = "2px"
+                    style["font-size"] = "var(--lumo-font-size-s)"
+                    style["font-weight"] = "600"
+                    style["color"] = "var(--lumo-base-color)"
+                    style["text-shadow"] = "0 1px 1px rgba(0,0,0,0.6)"
+                }
+            )
         }
     }
 
