@@ -2954,25 +2954,40 @@ class MainView : VerticalLayout() {
 
     private fun buildStatisticsPrototypePanel(): Component {
         val sections = mutableListOf<Component>()
-        selectedProject?.let { project ->
-            sections += propertySection(
-                "Статистика проекта: ${project.name}",
-                phaseStatisticsView(project.objects)
-            )
-            val batchObjects = projects.filter { it.batch == project.batch }.flatMap { it.objects }
-            sections += propertySection(
-                "Статистика партии: ${project.batch}",
-                phaseStatisticsView(batchObjects)
-            )
-        }
-        selectedCollection?.let { collection ->
-            sections += propertySection(
-                "Статистика коллекции: ${collection.name}",
-                phaseStatisticsView(collection.objects)
-            )
+        when (leftPanelMode) {
+            LeftPanelMode.PROJECTS -> {
+                selectedProject?.let { project ->
+                    sections += propertySection(
+                        "Статистика проекта: ${project.name}",
+                        phaseStatisticsView(project.objects)
+                    )
+                    val batchObjects = projects
+                        .asSequence()
+                        .filter { it.batch == project.batch }
+                        .flatMap { it.objects.asSequence() }
+                        .toList()
+                    sections += propertySection(
+                        "Статистика партии: ${project.batch}",
+                        phaseStatisticsView(batchObjects)
+                    )
+                }
+            }
+            LeftPanelMode.COLLECTIONS -> {
+                selectedCollection?.let { collection ->
+                    sections += propertySection(
+                        "Статистика коллекции: ${collection.name}",
+                        phaseStatisticsView(collection.objects)
+                    )
+                }
+            }
         }
         if (sections.isEmpty()) {
-            sections += propertySection("Статистика", Paragraph("Выберите проект или коллекцию для просмотра статистики."))
+            val hint = if (leftPanelMode == LeftPanelMode.PROJECTS) {
+                "Выберите проект для просмотра статистики проекта и партии."
+            } else {
+                "Выберите коллекцию для просмотра статистики."
+            }
+            sections += propertySection("Статистика", Paragraph(hint))
         }
         return VerticalLayout(*sections.toTypedArray()).apply {
             isPadding = false
