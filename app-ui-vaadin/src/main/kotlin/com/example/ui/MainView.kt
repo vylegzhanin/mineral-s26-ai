@@ -3005,9 +3005,6 @@ class MainView : VerticalLayout() {
         val areaByPhase = linkedMapOf<String, Double>()
         val boundaryByPair = linkedMapOf<String, Double>()
         var boundaryPxTotal = 0.0
-        var boundaryDensitySum = 0.0
-        var boundaryEntropySum = 0.0
-        var boundaryObjects = 0
 
         objects.forEach { obj ->
             val areaPx = obj.properties["area_px"]?.toDoubleOrNull()?.takeIf { it > 0.0 } ?: 1.0
@@ -3028,11 +3025,6 @@ class MainView : VerticalLayout() {
                     boundaryByPair[pair] = (boundaryByPair[pair] ?: 0.0) + share * boundaryPx
                 }
             }
-            obj.properties["phase_boundary_density"]?.toDoubleOrNull()?.let {
-                boundaryDensitySum += it
-                boundaryObjects += 1
-            }
-            obj.properties["phase_boundary_entropy"]?.toDoubleOrNull()?.let { boundaryEntropySum += it }
         }
 
         val totalArea = areaByPhase.values.sum()
@@ -3047,9 +3039,7 @@ class MainView : VerticalLayout() {
             setWidthFull()
         }
         layout.add(buildInteractivePieChart("Доли фаз по площади, %", shares))
-        val avgBoundaryDensity = if (boundaryObjects == 0) 0.0 else boundaryDensitySum / boundaryObjects.toDouble()
-        val avgEntropy = if (boundaryObjects == 0) 0.0 else boundaryEntropySum / boundaryObjects.toDouble()
-        layout.add(Hr(), buildBoundaryMetricsChart(boundaryPxTotal, avgBoundaryDensity, avgEntropy, totalArea))
+        layout.add(Hr(), buildBoundaryPropertyHistograms(objects))
         if (boundaryByPair.isNotEmpty()) {
             val topBoundaryShares = boundaryByPair.entries
                 .sortedByDescending { it.value }
@@ -3191,50 +3181,66 @@ class MainView : VerticalLayout() {
     }
 
     private fun buildBoundaryMetricsChart(
-        boundaryPxTotal: Double,
-        avgBoundaryDensity: Double,
-        avgEntropy: Double,
-        totalArea: Double
+        boundaryDensityValues: List<Double>,
+        entropyValues: List<Double>
     ): Component {
-        val boundaryVsArea = if (totalArea <= 0.0) 0.0 else (boundaryPxTotal / totalArea).coerceIn(0.0, 1.0)
-        val densityRatio = avgBoundaryDensity.coerceIn(0.0, 1.0)
-        val entropyRatio = (avgEntropy / 3.0).coerceIn(0.0, 1.0)
-        val bars = listOf(
-            "Доля границ к площади" to boundaryVsArea,
-            "Плотность границ (0..1)" to densityRatio,
-            "Энтропия контактов (0..3)" to entropyRatio
+        val densityHistogram = histogramSvg(
+            title = "Распределение плотности границ (объекты)",
+            values = boundaryDensityValues,
+            domainMax = 1.0
         )
-
-        val maxBarHeight = 92.0
-        val barWidth = 44
-        val gap = 18
-        val chartWidth = (bars.size * barWidth + (bars.size - 1) * gap)
-        val svgBars = bars.mapIndexed { index, (label, ratio) ->
-            val barHeight = maxBarHeight * ratio
-            val x = index * (barWidth + gap)
-            val y = maxBarHeight - barHeight
-            val percent = "%.1f".format(Locale.US, ratio * 100.0)
-            """
-                <g transform="translate($x,0)">
-                  <rect x="0" y="0" width="$barWidth" height="$maxBarHeight" fill="var(--lumo-contrast-10pct)" rx="6"></rect>
-                  <rect x="0" y="$y" width="$barWidth" height="$barHeight" fill="var(--lumo-primary-color)" rx="6"></rect>
-                  <text x="${barWidth / 2}" y="${y - 6}" text-anchor="middle" fill="var(--lumo-body-text-color)" font-size="10">$percent</text>
-                  <text x="${barWidth / 2}" y="${maxBarHeight + 14}" text-anchor="middle" fill="var(--lumo-secondary-text-color)" font-size="9">$label</text>
-                </g>
-            """.trimIndent()
-        }
+        val entropyHistogram = histogramSvg(
+            title = "Распределение энтропии контактов (объекты)",
+            values = entropyValues,
+            domainMax = 3.0
+        )
         val svg = """
             <div style="display:flex;flex-direction:column;gap:6px;align-items:center;">
-              <span style="font-size:var(--lumo-font-size-s);font-weight:600;">Относительные метрики границ</span>
-              <svg viewBox="0 0 $chartWidth 110" width="$chartWidth" height="110" role="img" aria-label="Гистограмма метрик границ">
-                ${svgBars.joinToString("\n")}
-              </svg>
+              $densityHistogram
+              $entropyHistogram
             </div>
         """.trimIndent()
         return Div().apply {
             element.setProperty("innerHTML", svg)
             setWidthFull()
         }
+    }
+
+    private fun buildBoundaryPropertyHistograms(objects: List<DatasetObject>): Component {
+        val densityValues = objects.mapNotNull { it.properties["phase_boundary_density"]?.toDoubleOrNull() }
+        val entropyValues = objects.mapNotNull { it.properties["phase_boundary_entropy"]?.toDoubleOrNull() }
+        return buildBoundaryMetricsChart(densityValues, entropyValues)
+    }
+
+    private fun histogramSvg(title: String, values: List<Double>, domainMax: Double, bins: Int = 8): String {
+        if (values.isEmpty()) {
+            return """<span style="font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);">$title: нет данных</span>"""
+        }
+        val counts = IntArray(bins)
+        values.forEach { raw ->
+            val normalized = (raw / domainMax).coerceIn(0.0, 0.999999)
+            val bucket = (normalized * bins).toInt().coerceIn(0, bins - 1)
+            counts[bucket] += 1
+        }
+        val maxCount = counts.maxOrNull()?.coerceAtLeast(1) ?: 1
+        val barWidth = 18
+        val gap = 4
+        val chartHeight = 72.0
+        val chartWidth = bins * barWidth + (bins - 1) * gap
+        val bars = counts.mapIndexed { i, count ->
+            val height = if (count == 0) 2.0 else chartHeight * count.toDouble() / maxCount.toDouble()
+            val x = i * (barWidth + gap)
+            val y = chartHeight - height
+            """<rect x="$x" y="$y" width="$barWidth" height="$height" fill="var(--lumo-primary-color)" rx="2"><title>bin ${i + 1}: $count</title></rect>"""
+        }
+        return """
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:center;">
+              <span style="font-size:var(--lumo-font-size-xs);font-weight:600;">$title</span>
+              <svg viewBox="0 0 $chartWidth 88" width="$chartWidth" height="88" role="img" aria-label="$title">
+                ${bars.joinToString("\n")}
+              </svg>
+            </div>
+        """.trimIndent()
     }
 
     private fun fallbackColorForPhase(phaseName: String): String {
