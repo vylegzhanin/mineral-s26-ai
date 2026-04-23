@@ -3186,13 +3186,11 @@ class MainView : VerticalLayout() {
     ): Component {
         val densityHistogram = histogramSvg(
             title = "Распределение плотности границ (объекты)",
-            values = boundaryDensityValues,
-            domainMax = 1.0
+            values = boundaryDensityValues
         )
         val entropyHistogram = histogramSvg(
             title = "Распределение энтропии контактов (объекты)",
-            values = entropyValues,
-            domainMax = 3.0
+            values = entropyValues
         )
         val svg = """
             <div style="display:flex;flex-direction:column;gap:6px;align-items:center;">
@@ -3212,13 +3210,18 @@ class MainView : VerticalLayout() {
         return buildBoundaryMetricsChart(densityValues, entropyValues)
     }
 
-    private fun histogramSvg(title: String, values: List<Double>, domainMax: Double, bins: Int = 8): String {
+    private fun histogramSvg(title: String, values: List<Double>, bins: Int = 8): String {
         if (values.isEmpty()) {
             return """<span style="font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);">$title: нет данных</span>"""
         }
+        val minValue = values.minOrNull() ?: 0.0
+        val maxValue = values.maxOrNull() ?: 0.0
+        if (kotlin.math.abs(maxValue - minValue) < 1e-12) {
+            return """<span style="font-size:var(--lumo-font-size-xs);color:var(--lumo-secondary-text-color);">$title: все значения одинаковые (${String.format(Locale.US, "%.6f", minValue)})</span>"""
+        }
         val counts = IntArray(bins)
         values.forEach { raw ->
-            val normalized = (raw / domainMax).coerceIn(0.0, 0.999999)
+            val normalized = ((raw - minValue) / (maxValue - minValue)).coerceIn(0.0, 0.999999)
             val bucket = (normalized * bins).toInt().coerceIn(0, bins - 1)
             counts[bucket] += 1
         }
@@ -3236,6 +3239,7 @@ class MainView : VerticalLayout() {
         return """
             <div style="display:flex;flex-direction:column;gap:4px;align-items:center;">
               <span style="font-size:var(--lumo-font-size-xs);font-weight:600;">$title</span>
+              <span style="font-size:10px;color:var(--lumo-secondary-text-color);">min=${String.format(Locale.US, "%.6f", minValue)}, max=${String.format(Locale.US, "%.6f", maxValue)}</span>
               <svg viewBox="0 0 $chartWidth 88" width="$chartWidth" height="88" role="img" aria-label="$title">
                 ${bars.joinToString("\n")}
               </svg>
