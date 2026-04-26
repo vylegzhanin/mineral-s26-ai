@@ -152,6 +152,8 @@ class ObjectMaskEditorDialog : Dialog() {
             const srcCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
             const baseMaskCtx = baseMaskCanvas.getContext('2d', { willReadFrequently: true });
             const editMaskCtx = editMaskCanvas.getContext('2d', { willReadFrequently: true });
+            let sourceLoaded = false;
+            let baseMaskLoaded = false;
 
             const srcImg = new Image();
             srcImg.onload = () => {
@@ -167,13 +169,24 @@ class ObjectMaskEditorDialog : Dialog() {
                 baseMaskCtx.imageSmoothingEnabled = false;
                 editMaskCtx.imageSmoothingEnabled = false;
                 srcCtx.drawImage(srcImg, 0, 0, w, h);
+                sourceLoaded = true;
 
                 const mUrl = $2;
                 if (mUrl) {
                     const maskImg = new Image();
-                    maskImg.onload = () => baseMaskCtx.drawImage(maskImg, 0, 0, w, h);
+                    maskImg.onload = () => {
+                        baseMaskCtx.drawImage(maskImg, 0, 0, w, h);
+                        baseMaskLoaded = true;
+                    };
+                    maskImg.onerror = () => { baseMaskLoaded = true; };
                     maskImg.src = mUrl;
+                } else {
+                    baseMaskLoaded = true;
                 }
+            };
+            srcImg.onerror = () => {
+                sourceLoaded = true;
+                baseMaskLoaded = true;
             };
             srcImg.src = $1;
 
@@ -195,7 +208,17 @@ class ObjectMaskEditorDialog : Dialog() {
 
             this.__maskEditor = {
                 setBrushColor: (color) => { brushColor = color || '#000000'; },
-                exportMask: () => {
+                exportMask: async () => {
+                    await new Promise((resolve) => {
+                        const checkReady = () => {
+                            if (sourceLoaded && baseMaskLoaded) {
+                                resolve();
+                            } else {
+                                requestAnimationFrame(checkReady);
+                            }
+                        };
+                        checkReady();
+                    });
                     const result = document.createElement('canvas');
                     result.width = baseMaskCanvas.width;
                     result.height = baseMaskCanvas.height;
