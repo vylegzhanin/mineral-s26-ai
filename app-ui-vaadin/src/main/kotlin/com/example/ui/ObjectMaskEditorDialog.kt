@@ -4,16 +4,16 @@ import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.H4
+import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
 import com.vaadin.flow.component.select.Select
-import com.vaadin.flow.component.textfield.TextField
+import com.vaadin.flow.data.renderer.ComponentRenderer
 import java.util.UUID
 
 class ObjectMaskEditorDialog : Dialog() {
     private val canvasHost = Div()
-    private val brushColorSelect = Select<String>()
-    private val customColorField = TextField("Цвет (hex)")
+    private val brushColorSelect = Select<BrushOption>()
     private var canvasWrap: Div? = null
 
     init {
@@ -26,30 +26,31 @@ class ObjectMaskEditorDialog : Dialog() {
         canvasHost.setSizeFull()
 
         brushColorSelect.label = "Кисть"
-        brushColorSelect.setItems("Фон")
-        brushColorSelect.value = "Фон"
-
-        customColorField.placeholder = "#RRGGBB"
-        customColorField.value = "#000000"
-        customColorField.isClearButtonVisible = false
-        customColorField.addValueChangeListener {
-            if (brushColorSelect.value == "Пользовательский") {
-                applyBrushColor(customColorField.value)
+        brushColorSelect.itemLabelGenerator = { it?.title.orEmpty() }
+        brushColorSelect.setRenderer(
+            ComponentRenderer { option ->
+                val colorDot = Div().apply {
+                    style["width"] = "12px"
+                    style["height"] = "12px"
+                    style["border-radius"] = "999px"
+                    style["background"] = option.color
+                    style["border"] = "1px solid rgba(0,0,0,0.35)"
+                    style["flex-shrink"] = "0"
+                }
+                HorizontalLayout(colorDot, Span(option.title)).apply {
+                    isPadding = false
+                    isSpacing = true
+                    style["align-items"] = "center"
+                    style["gap"] = "8px"
+                }
             }
-        }
+        )
 
         brushColorSelect.addValueChangeListener {
-            val value = it.value ?: "Фон"
-            val color = when {
-                value == "Фон" -> "#000000"
-                value == "Пользовательский" -> customColorField.value.ifBlank { "#000000" }
-                value.contains("#") -> value.substringAfter("#").let { hex -> "#$hex" }
-                else -> "#000000"
-            }
-            applyBrushColor(color)
+            applyBrushColor(it.value?.color ?: "#000000")
         }
 
-        val controls = HorizontalLayout(brushColorSelect, customColorField).apply {
+        val controls = HorizontalLayout(brushColorSelect).apply {
             isPadding = false
             isSpacing = true
             width = "100%"
@@ -88,11 +89,13 @@ class ObjectMaskEditorDialog : Dialog() {
         canvasWrap = currentCanvasWrap
         canvasHost.add(currentCanvasWrap)
 
-        val options = mutableListOf("Фон")
+        val options = mutableListOf(BrushOption("Фон", "#000000"))
         options += phaseColors.entries
             .sortedBy { it.key }
-            .map { "${it.key} #${it.value.removePrefix("0x")}" }
-        options += "Пользовательский"
+            .mapNotNull { (phaseName, rawColor) ->
+                val normalizedHex = normalizeBrushHex(rawColor) ?: return@mapNotNull null
+                BrushOption(phaseName, normalizedHex)
+            }
         brushColorSelect.setItems(options)
         brushColorSelect.value = options.first()
 
@@ -258,11 +261,7 @@ class ObjectMaskEditorDialog : Dialog() {
     }
 
     private fun applyBrushColor(color: String) {
-        val normalized = when {
-            color.matches(Regex("^#[0-9a-fA-F]{6}$")) -> color
-            color.matches(Regex("^[0-9a-fA-F]{6}$")) -> "#$color"
-            else -> "#000000"
-        }
+        val normalized = normalizeBrushHex(color) ?: "#000000"
         canvasWrap?.element?.executeJs(
             """
             if (this.__maskEditor) {
@@ -272,4 +271,20 @@ class ObjectMaskEditorDialog : Dialog() {
             normalized
         )
     }
+
+    private fun normalizeBrushHex(color: String?): String? {
+        val value = color?.trim().orEmpty()
+        if (value.isBlank()) return null
+        return when {
+            value.matches(Regex("^#[0-9a-fA-F]{6}$")) -> value
+            value.matches(Regex("^[0-9a-fA-F]{6}$")) -> "#$value"
+            value.matches(Regex("^0x[0-9a-fA-F]{6}$")) -> "#" + value.removePrefix("0x")
+            else -> null
+        }
+    }
+
+    private data class BrushOption(
+        val title: String,
+        val color: String
+    )
 }
