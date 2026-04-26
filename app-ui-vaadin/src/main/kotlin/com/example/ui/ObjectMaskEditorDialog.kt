@@ -129,7 +129,7 @@ class ObjectMaskEditorDialog : Dialog() {
             holder.style.position = 'relative';
             holder.style.display = 'inline-block';
             holder.style.transformOrigin = 'top left';
-            holder.title = 'Объект: ' + $3;
+            holder.title = 'Объект: ' + $2;
 
             const sourceCanvas = document.createElement('canvas');
             const baseMaskCanvas = document.createElement('canvas');
@@ -179,14 +179,14 @@ class ObjectMaskEditorDialog : Dialog() {
             };
             srcImg.onerror = (event) => {
                 console.error('[MaskEditor] Failed to load source image', {
-                    sourceImageUrl: $1,
+                    sourceImageUrl: $0,
                     errorEvent: event
                 });
                 sourceLoaded = true;
             };
-            srcImg.src = $1;
+            srcImg.src = $0;
 
-            const mUrl = $2;
+            const mUrl = $1;
             if (mUrl) {
                 const maskImg = new Image();
                 maskImg.onload = () => {
