@@ -141,8 +141,9 @@ class ObjectMaskEditorDialog : Dialog() {
                 c.style.imageRendering = 'pixelated';
                 c.style.pointerEvents = idx === 2 ? 'auto' : 'none';
             });
-            baseMaskCanvas.style.opacity = '0.6';
-            editMaskCanvas.style.opacity = '0.6';
+            sourceCanvas.style.opacity = '0.35';
+            baseMaskCanvas.style.opacity = '1';
+            editMaskCanvas.style.opacity = '1';
 
             holder.appendChild(sourceCanvas);
             holder.appendChild(baseMaskCanvas);
@@ -230,6 +231,8 @@ class ObjectMaskEditorDialog : Dialog() {
                     result.height = baseMaskCanvas.height;
                     const resultCtx = result.getContext('2d');
                     resultCtx.imageSmoothingEnabled = false;
+                    resultCtx.fillStyle = '#000000';
+                    resultCtx.fillRect(0, 0, result.width, result.height);
                     resultCtx.drawImage(baseMaskCanvas, 0, 0);
                     resultCtx.drawImage(editMaskCanvas, 0, 0);
                     return result.toDataURL('image/png');
