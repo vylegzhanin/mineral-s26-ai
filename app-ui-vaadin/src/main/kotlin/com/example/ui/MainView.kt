@@ -2434,7 +2434,7 @@ class MainView : VerticalLayout() {
             phaseColors = resolvedColors
         ) { editedMaskDataUrl ->
             obj.properties["mask_crop_url"] = editedMaskDataUrl
-            renderCurrentSelection()
+            refreshCurrentSelection()
         }
     }
 

@@ -80,7 +80,7 @@ class ObjectMaskEditorDialog : Dialog() {
         canvasHost.removeAll()
 
         val canvasWrap = Div().apply {
-            id = currentCanvasId
+            setId(currentCanvasId)
             style["position"] = "relative"
             style["display"] = "inline-block"
             style["border"] = "1px solid var(--lumo-contrast-20pct)"
