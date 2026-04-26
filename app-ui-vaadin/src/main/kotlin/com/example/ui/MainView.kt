@@ -158,6 +158,7 @@ class MainView : VerticalLayout() {
     private var draggedCardField: String? = null
     private var selectedObjectCard: Div? = null
     private var visibleObjectLimit: Int = OBJECT_PAGE_SIZE
+    private val maskEditorDialog = ObjectMaskEditorDialog()
 
     private val projectTab = Tab("Проекты")
     private val collectionTab = Tab("Коллекции")
@@ -2408,6 +2409,32 @@ class MainView : VerticalLayout() {
             style["justify-content"] = "center"
             styleObjectSelection(selected, style)
             addClickListener { event -> onClick(event) }
+            addDoubleClickListener {
+                openMaskEditor(obj)
+            }
+        }
+    }
+
+    private fun openMaskEditor(obj: DatasetObject) {
+        val sourceImageUrl = obj.properties["crop_preview_url"] ?: obj.previewUrl
+        val maskImageUrl = obj.properties["mask_crop_url"]
+        val colorByPhase = grainClassColorMapForCurrentDataset()
+        val objectColor = normalizeMaskColor(obj.properties["mask_color_rgb"])
+        val objectPhase = obj.properties["grain_class"]?.trim().orEmpty()
+        val resolvedColors = colorByPhase.toMutableMap().apply {
+            if (!objectPhase.isNullOrBlank() && !objectColor.isNullOrBlank()) {
+                this[objectPhase] = objectColor
+            }
+        }
+
+        maskEditorDialog.openEditor(
+            objectName = obj.name,
+            sourceImageUrl = sourceImageUrl,
+            maskImageUrl = maskImageUrl,
+            phaseColors = resolvedColors
+        ) { editedMaskDataUrl ->
+            obj.properties["mask_crop_url"] = editedMaskDataUrl
+            renderCurrentSelection()
         }
     }
 
