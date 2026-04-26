@@ -107,7 +107,7 @@ class ObjectMaskEditorDialog : Dialog() {
                     return this.__maskEditor.exportMask();
                     """.trimIndent()
                 ).then(String::class.java) { dataUrl ->
-                    if (!dataUrl.isNullOrBlank()) {
+                    if (!dataUrl.isNullOrBlank() && dataUrl != "null" && dataUrl.startsWith("data:image/")) {
                         onSave(dataUrl)
                     }
                     close()
@@ -224,7 +224,7 @@ class ObjectMaskEditorDialog : Dialog() {
                         checkReady();
                     });
                     if (!canvasesInitialized || baseMaskCanvas.width === 0 || baseMaskCanvas.height === 0) {
-                        return null;
+                        return '';
                     }
                     const result = document.createElement('canvas');
                     result.width = baseMaskCanvas.width;
