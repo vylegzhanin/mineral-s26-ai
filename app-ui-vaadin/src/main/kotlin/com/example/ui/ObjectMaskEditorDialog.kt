@@ -154,11 +154,10 @@ class ObjectMaskEditorDialog : Dialog() {
             const editMaskCtx = editMaskCanvas.getContext('2d', { willReadFrequently: true });
             let sourceLoaded = false;
             let baseMaskLoaded = false;
+            let canvasesInitialized = false;
 
-            const srcImg = new Image();
-            srcImg.onload = () => {
-                const w = srcImg.width;
-                const h = srcImg.height;
+            const initCanvases = (w, h) => {
+                if (canvasesInitialized) return;
                 [sourceCanvas, baseMaskCanvas, editMaskCanvas].forEach((c) => {
                     c.width = w;
                     c.height = h;
@@ -168,27 +167,31 @@ class ObjectMaskEditorDialog : Dialog() {
                 srcCtx.imageSmoothingEnabled = false;
                 baseMaskCtx.imageSmoothingEnabled = false;
                 editMaskCtx.imageSmoothingEnabled = false;
-                srcCtx.drawImage(srcImg, 0, 0, w, h);
-                sourceLoaded = true;
+                canvasesInitialized = true;
+            };
 
-                const mUrl = $2;
-                if (mUrl) {
-                    const maskImg = new Image();
-                    maskImg.onload = () => {
-                        baseMaskCtx.drawImage(maskImg, 0, 0, w, h);
-                        baseMaskLoaded = true;
-                    };
-                    maskImg.onerror = () => { baseMaskLoaded = true; };
-                    maskImg.src = mUrl;
-                } else {
-                    baseMaskLoaded = true;
-                }
-            };
-            srcImg.onerror = () => {
+            const srcImg = new Image();
+            srcImg.onload = () => {
+                initCanvases(srcImg.width, srcImg.height);
+                srcCtx.drawImage(srcImg, 0, 0, sourceCanvas.width, sourceCanvas.height);
                 sourceLoaded = true;
-                baseMaskLoaded = true;
             };
+            srcImg.onerror = () => { sourceLoaded = true; };
             srcImg.src = $1;
+
+            const mUrl = $2;
+            if (mUrl) {
+                const maskImg = new Image();
+                maskImg.onload = () => {
+                    initCanvases(maskImg.width, maskImg.height);
+                    baseMaskCtx.drawImage(maskImg, 0, 0, baseMaskCanvas.width, baseMaskCanvas.height);
+                    baseMaskLoaded = true;
+                };
+                maskImg.onerror = () => { baseMaskLoaded = true; };
+                maskImg.src = mUrl;
+            } else {
+                baseMaskLoaded = true;
+            }
 
             let draw = false;
             let brushColor = '#000000';
@@ -219,6 +222,9 @@ class ObjectMaskEditorDialog : Dialog() {
                         };
                         checkReady();
                     });
+                    if (!canvasesInitialized || baseMaskCanvas.width === 0 || baseMaskCanvas.height === 0) {
+                        return null;
+                    }
                     const result = document.createElement('canvas');
                     result.width = baseMaskCanvas.width;
                     result.height = baseMaskCanvas.height;
