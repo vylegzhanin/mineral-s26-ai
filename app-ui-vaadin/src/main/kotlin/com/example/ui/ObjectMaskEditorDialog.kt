@@ -1,21 +1,22 @@
 package com.example.ui
 
-import com.vaadin.flow.component.ItemLabelGenerator
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.Div
 import com.vaadin.flow.component.html.H4
 import com.vaadin.flow.component.html.Span
+import com.vaadin.flow.component.menubar.MenuBar
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
-import com.vaadin.flow.component.select.Select
-import com.vaadin.flow.data.renderer.ComponentRenderer
 import java.util.UUID
 
 class ObjectMaskEditorDialog : Dialog() {
     private val canvasHost = Div()
-    private val brushColorSelect = Select<BrushOption>()
+    private val brushColorMenuBar = MenuBar()
     private val selectedBrushColorDot = Div()
+    private val selectedBrushLabel = Span("Фон")
+    private var brushOptions: List<BrushOption> = listOf(BrushOption("Фон", "#000000"))
+    private var selectedBrushOption: BrushOption = brushOptions.first()
     private var canvasWrap: Div? = null
 
     init {
@@ -27,32 +28,9 @@ class ObjectMaskEditorDialog : Dialog() {
 
         canvasHost.setSizeFull()
 
-        brushColorSelect.label = "Кисть"
-        brushColorSelect.itemLabelGenerator = ItemLabelGenerator { it?.title.orEmpty() }
-        brushColorSelect.setRenderer(
-            ComponentRenderer { option ->
-                val colorDot = Div().apply {
-                    style["width"] = "12px"
-                    style["height"] = "12px"
-                    style["border-radius"] = "999px"
-                    style["background"] = option.color
-                    style["border"] = "1px solid rgba(0,0,0,0.35)"
-                    style["flex-shrink"] = "0"
-                }
-                HorizontalLayout(colorDot, Span(option.title)).apply {
-                    isPadding = false
-                    isSpacing = true
-                    style["align-items"] = "center"
-                    style["gap"] = "8px"
-                }
-            }
-        )
-
-        brushColorSelect.addValueChangeListener {
-            val selectedColor = it.value?.color ?: "#000000"
-            updateSelectedBrushColorDot(selectedColor)
-            applyBrushColor(selectedColor)
-        }
+        brushColorMenuBar.style["padding"] = "0"
+        brushColorMenuBar.style["margin"] = "0"
+        rebuildBrushColorMenu()
 
         selectedBrushColorDot.style["width"] = "14px"
         selectedBrushColorDot.style["height"] = "14px"
@@ -61,7 +39,9 @@ class ObjectMaskEditorDialog : Dialog() {
         selectedBrushColorDot.style["background"] = "#000000"
         selectedBrushColorDot.style["flex-shrink"] = "0"
 
-        val controls = HorizontalLayout(selectedBrushColorDot, brushColorSelect).apply {
+        selectedBrushLabel.style["font-size"] = "var(--lumo-font-size-s)"
+        selectedBrushLabel.style["font-weight"] = "500"
+        val controls = HorizontalLayout(selectedBrushColorDot, selectedBrushLabel, brushColorMenuBar).apply {
             isPadding = false
             isSpacing = true
             width = "100%"
@@ -109,9 +89,10 @@ class ObjectMaskEditorDialog : Dialog() {
                 val normalizedHex = normalizeBrushHex(rawColor) ?: return@mapNotNull null
                 BrushOption(phaseName, normalizedHex)
             }
-        brushColorSelect.setItems(options)
-        brushColorSelect.value = options.first()
-        updateSelectedBrushColorDot(options.first().color)
+        brushOptions = options
+        selectedBrushOption = brushOptions.first()
+        updateSelectedBrushIndicator(selectedBrushOption)
+        rebuildBrushColorMenu()
 
         footer.removeAll()
         footer.add(
@@ -289,6 +270,30 @@ class ObjectMaskEditorDialog : Dialog() {
     private fun updateSelectedBrushColorDot(color: String) {
         val normalized = normalizeBrushHex(color) ?: "#000000"
         selectedBrushColorDot.style["background"] = normalized
+    }
+
+    private fun selectBrushOption(option: BrushOption) {
+        selectedBrushOption = option
+        updateSelectedBrushIndicator(option)
+        applyBrushColor(option.color)
+        rebuildBrushColorMenu()
+    }
+
+    private fun updateSelectedBrushIndicator(option: BrushOption) {
+        updateSelectedBrushColorDot(option.color)
+        selectedBrushLabel.text = option.title
+    }
+
+    private fun rebuildBrushColorMenu() {
+        brushColorMenuBar.removeAll()
+        val rootItem = brushColorMenuBar.addItem("Кисть")
+        val subMenu = rootItem.subMenu
+        brushOptions.forEach { option ->
+            val itemLabel = if (option.title == selectedBrushOption.title) "✓ ${option.title}" else option.title
+            subMenu.addItem(itemLabel) {
+                selectBrushOption(option)
+            }
+        }
     }
 
     private fun normalizeBrushHex(color: String?): String? {
