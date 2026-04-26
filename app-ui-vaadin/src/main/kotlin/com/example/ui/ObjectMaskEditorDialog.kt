@@ -132,43 +132,46 @@ class ObjectMaskEditorDialog : Dialog() {
             holder.title = 'Объект: ' + $3;
 
             const sourceCanvas = document.createElement('canvas');
-            const maskCanvas = document.createElement('canvas');
-            [sourceCanvas, maskCanvas].forEach((c, idx) => {
+            const baseMaskCanvas = document.createElement('canvas');
+            const editMaskCanvas = document.createElement('canvas');
+            [sourceCanvas, baseMaskCanvas, editMaskCanvas].forEach((c, idx) => {
                 c.style.position = idx === 0 ? 'relative' : 'absolute';
                 c.style.left = '0';
                 c.style.top = '0';
                 c.style.imageRendering = 'pixelated';
-                c.style.pointerEvents = idx === 0 ? 'none' : 'auto';
+                c.style.pointerEvents = idx === 2 ? 'auto' : 'none';
             });
-            maskCanvas.style.opacity = '0.6';
+            baseMaskCanvas.style.opacity = '0.6';
+            editMaskCanvas.style.opacity = '0.6';
 
             holder.appendChild(sourceCanvas);
-            holder.appendChild(maskCanvas);
+            holder.appendChild(baseMaskCanvas);
+            holder.appendChild(editMaskCanvas);
             this.appendChild(holder);
 
             const srcCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
-            const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+            const baseMaskCtx = baseMaskCanvas.getContext('2d', { willReadFrequently: true });
+            const editMaskCtx = editMaskCanvas.getContext('2d', { willReadFrequently: true });
 
             const srcImg = new Image();
-            srcImg.crossOrigin = 'anonymous';
             srcImg.onload = () => {
                 const w = srcImg.width;
                 const h = srcImg.height;
-                [sourceCanvas, maskCanvas].forEach((c) => {
+                [sourceCanvas, baseMaskCanvas, editMaskCanvas].forEach((c) => {
                     c.width = w;
                     c.height = h;
                     c.style.width = (w * scale) + 'px';
                     c.style.height = (h * scale) + 'px';
                 });
                 srcCtx.imageSmoothingEnabled = false;
-                maskCtx.imageSmoothingEnabled = false;
+                baseMaskCtx.imageSmoothingEnabled = false;
+                editMaskCtx.imageSmoothingEnabled = false;
                 srcCtx.drawImage(srcImg, 0, 0, w, h);
 
                 const mUrl = $2;
                 if (mUrl) {
                     const maskImg = new Image();
-                    maskImg.crossOrigin = 'anonymous';
-                    maskImg.onload = () => maskCtx.drawImage(maskImg, 0, 0, w, h);
+                    maskImg.onload = () => baseMaskCtx.drawImage(maskImg, 0, 0, w, h);
                     maskImg.src = mUrl;
                 }
             };
@@ -178,21 +181,30 @@ class ObjectMaskEditorDialog : Dialog() {
             let brushColor = '#000000';
 
             const drawPx = (ev) => {
-                const rect = maskCanvas.getBoundingClientRect();
+                const rect = editMaskCanvas.getBoundingClientRect();
                 const x = Math.floor((ev.clientX - rect.left) / scale);
                 const y = Math.floor((ev.clientY - rect.top) / scale);
-                if (x < 0 || y < 0 || x >= maskCanvas.width || y >= maskCanvas.height) return;
-                maskCtx.fillStyle = brushColor;
-                maskCtx.fillRect(x, y, 1, 1);
+                if (x < 0 || y < 0 || x >= editMaskCanvas.width || y >= editMaskCanvas.height) return;
+                editMaskCtx.fillStyle = brushColor;
+                editMaskCtx.fillRect(x, y, 1, 1);
             };
 
-            maskCanvas.addEventListener('mousedown', (ev) => { draw = true; drawPx(ev); });
+            editMaskCanvas.addEventListener('mousedown', (ev) => { draw = true; drawPx(ev); });
             window.addEventListener('mouseup', () => { draw = false; });
-            maskCanvas.addEventListener('mousemove', (ev) => { if (draw) drawPx(ev); });
+            editMaskCanvas.addEventListener('mousemove', (ev) => { if (draw) drawPx(ev); });
 
             this.__maskEditor = {
                 setBrushColor: (color) => { brushColor = color || '#000000'; },
-                exportMask: () => maskCanvas.toDataURL('image/png')
+                exportMask: () => {
+                    const result = document.createElement('canvas');
+                    result.width = baseMaskCanvas.width;
+                    result.height = baseMaskCanvas.height;
+                    const resultCtx = result.getContext('2d');
+                    resultCtx.imageSmoothingEnabled = false;
+                    resultCtx.drawImage(baseMaskCanvas, 0, 0);
+                    resultCtx.drawImage(editMaskCanvas, 0, 0);
+                    return result.toDataURL('image/png');
+                }
             };
             """.trimIndent(),
             sourceImageUrl,
