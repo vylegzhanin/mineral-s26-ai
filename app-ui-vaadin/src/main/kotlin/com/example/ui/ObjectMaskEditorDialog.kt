@@ -177,7 +177,13 @@ class ObjectMaskEditorDialog : Dialog() {
                 srcCtx.drawImage(srcImg, 0, 0, sourceCanvas.width, sourceCanvas.height);
                 sourceLoaded = true;
             };
-            srcImg.onerror = () => { sourceLoaded = true; };
+            srcImg.onerror = (event) => {
+                console.error('[MaskEditor] Failed to load source image', {
+                    sourceImageUrl: $1,
+                    errorEvent: event
+                });
+                sourceLoaded = true;
+            };
             srcImg.src = $1;
 
             const mUrl = $2;
@@ -188,7 +194,13 @@ class ObjectMaskEditorDialog : Dialog() {
                     baseMaskCtx.drawImage(maskImg, 0, 0, baseMaskCanvas.width, baseMaskCanvas.height);
                     baseMaskLoaded = true;
                 };
-                maskImg.onerror = () => { baseMaskLoaded = true; };
+                maskImg.onerror = (event) => {
+                    console.error('[MaskEditor] Failed to load mask image', {
+                        maskImageUrl: mUrl,
+                        errorEvent: event
+                    });
+                    baseMaskLoaded = true;
+                };
                 maskImg.src = mUrl;
             } else {
                 baseMaskLoaded = true;
