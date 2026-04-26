@@ -14,7 +14,7 @@ class ObjectMaskEditorDialog : Dialog() {
     private val canvasHost = Div()
     private val brushColorSelect = Select<String>()
     private val customColorField = TextField("Цвет (hex)")
-    private var currentCanvasId: String = ""
+    private var canvasWrap: Div? = null
 
     init {
         isModal = true
@@ -76,17 +76,17 @@ class ObjectMaskEditorDialog : Dialog() {
         phaseColors: Map<String, String>,
         onSave: (maskDataUrl: String) -> Unit
     ) {
-        currentCanvasId = "mask-editor-${UUID.randomUUID()}"
         canvasHost.removeAll()
 
-        val canvasWrap = Div().apply {
-            setId(currentCanvasId)
+        val currentCanvasWrap = Div().apply {
+            setId("mask-editor-${UUID.randomUUID()}")
             style["position"] = "relative"
             style["display"] = "inline-block"
             style["border"] = "1px solid var(--lumo-contrast-20pct)"
             style["background"] = "#111"
         }
-        canvasHost.add(canvasWrap)
+        canvasWrap = currentCanvasWrap
+        canvasHost.add(currentCanvasWrap)
 
         val options = mutableListOf("Фон")
         options += phaseColors.entries
@@ -100,13 +100,12 @@ class ObjectMaskEditorDialog : Dialog() {
         footer.add(
             Button("Отмена") { close() },
             Button("Сохранить") {
-                element.executeJs(
+                val wrap = canvasWrap ?: return@Button
+                wrap.element.executeJs(
                     """
-                    const root = this.querySelector('#' + $0);
-                    if (!root || !root.__maskEditor) return null;
-                    return root.__maskEditor.exportMask();
-                    """.trimIndent(),
-                    currentCanvasId
+                    if (!this.__maskEditor) return null;
+                    return this.__maskEditor.exportMask();
+                    """.trimIndent()
                 ).then(String::class.java) { dataUrl ->
                     if (!dataUrl.isNullOrBlank()) {
                         onSave(dataUrl)
@@ -117,15 +116,13 @@ class ObjectMaskEditorDialog : Dialog() {
         )
 
         open()
-        setupEditor(objectName, sourceImageUrl, maskImageUrl)
+        setupEditor(currentCanvasWrap, objectName, sourceImageUrl, maskImageUrl)
     }
 
-    private fun setupEditor(objectName: String, sourceImageUrl: String, maskImageUrl: String?) {
-        element.executeJs(
+    private fun setupEditor(container: Div, objectName: String, sourceImageUrl: String, maskImageUrl: String?) {
+        container.element.executeJs(
             """
-            const container = this.querySelector('#' + $0);
-            if (!container) return;
-            container.innerHTML = '';
+            this.innerHTML = '';
 
             const scale = 4;
             const holder = document.createElement('div');
@@ -147,7 +144,7 @@ class ObjectMaskEditorDialog : Dialog() {
 
             holder.appendChild(sourceCanvas);
             holder.appendChild(maskCanvas);
-            container.appendChild(holder);
+            this.appendChild(holder);
 
             const srcCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
             const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
@@ -193,12 +190,11 @@ class ObjectMaskEditorDialog : Dialog() {
             window.addEventListener('mouseup', () => { draw = false; });
             maskCanvas.addEventListener('mousemove', (ev) => { if (draw) drawPx(ev); });
 
-            container.__maskEditor = {
+            this.__maskEditor = {
                 setBrushColor: (color) => { brushColor = color || '#000000'; },
                 exportMask: () => maskCanvas.toDataURL('image/png')
             };
             """.trimIndent(),
-            currentCanvasId,
             sourceImageUrl,
             maskImageUrl,
             objectName
@@ -211,14 +207,12 @@ class ObjectMaskEditorDialog : Dialog() {
             color.matches(Regex("^[0-9a-fA-F]{6}$")) -> "#$color"
             else -> "#000000"
         }
-        element.executeJs(
+        canvasWrap?.element?.executeJs(
             """
-            const root = this.querySelector('#' + $0);
-            if (root && root.__maskEditor) {
-                root.__maskEditor.setBrushColor($1);
+            if (this.__maskEditor) {
+                this.__maskEditor.setBrushColor($0);
             }
             """.trimIndent(),
-            currentCanvasId,
             normalized
         )
     }
