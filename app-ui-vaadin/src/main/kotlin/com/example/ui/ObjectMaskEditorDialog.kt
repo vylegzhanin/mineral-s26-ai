@@ -8,11 +8,17 @@ import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.menubar.MenuBar
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
+import com.vaadin.flow.component.slider.Slider
 import java.util.UUID
 
 class ObjectMaskEditorDialog : Dialog() {
+    companion object {
+        private const val DEFAULT_MASK_OPACITY = 0.42
+    }
+
     private val canvasHost = Div()
     private val brushColorMenuBar = MenuBar()
+    private val maskOpacitySlider = Slider(0.0, 1.0, DEFAULT_MASK_OPACITY)
     private var brushOptions: List<BrushOption> = listOf(BrushOption("Фон", "#000000"))
     private var selectedBrushOption: BrushOption = brushOptions.first()
     private var canvasWrap: Div? = null
@@ -29,7 +35,16 @@ class ObjectMaskEditorDialog : Dialog() {
         brushColorMenuBar.style["padding"] = "0"
         brushColorMenuBar.style["margin"] = "0"
         rebuildBrushColorMenu()
-        val controls = HorizontalLayout(brushColorMenuBar).apply {
+        maskOpacitySlider.width = "180px"
+        maskOpacitySlider.step = 0.01
+        maskOpacitySlider.min = 0.0
+        maskOpacitySlider.max = 1.0
+        maskOpacitySlider.value = DEFAULT_MASK_OPACITY
+        maskOpacitySlider.element.setAttribute("title", "Прозрачность маски")
+        maskOpacitySlider.addValueChangeListener {
+            applyMaskOpacity(it.value)
+        }
+        val controls = HorizontalLayout(brushColorMenuBar, Span("Прозрачность"), maskOpacitySlider).apply {
             isPadding = false
             isSpacing = true
             width = "100%"
@@ -80,6 +95,8 @@ class ObjectMaskEditorDialog : Dialog() {
         brushOptions = options
         selectedBrushOption = brushOptions.first()
         applyBrushColor(selectedBrushOption.color)
+        maskOpacitySlider.value = DEFAULT_MASK_OPACITY
+        applyMaskOpacity(DEFAULT_MASK_OPACITY)
         rebuildBrushColorMenu()
 
         footer.removeAll()
@@ -102,10 +119,16 @@ class ObjectMaskEditorDialog : Dialog() {
         )
 
         open()
-        setupEditor(currentCanvasWrap, objectName, sourceImageUrl, maskImageUrl)
+        setupEditor(currentCanvasWrap, objectName, sourceImageUrl, maskImageUrl, maskOpacitySlider.value)
     }
 
-    private fun setupEditor(container: Div, objectName: String, sourceImageUrl: String, maskImageUrl: String?) {
+    private fun setupEditor(
+        container: Div,
+        objectName: String,
+        sourceImageUrl: String,
+        maskImageUrl: String?,
+        initialMaskOpacity: Double
+    ) {
         container.element.executeJs(
             """
             this.innerHTML = '';
@@ -127,9 +150,10 @@ class ObjectMaskEditorDialog : Dialog() {
                 c.style.imageRendering = 'pixelated';
                 c.style.pointerEvents = idx === 2 ? 'auto' : 'none';
             });
-            sourceCanvas.style.opacity = '0.35';
-            baseMaskCanvas.style.opacity = '1';
-            editMaskCanvas.style.opacity = '1';
+            sourceCanvas.style.opacity = '1';
+            const maskOpacity = Number($3);
+            baseMaskCanvas.style.opacity = String(maskOpacity);
+            editMaskCanvas.style.opacity = String(maskOpacity);
 
             holder.appendChild(sourceCanvas);
             holder.appendChild(baseMaskCanvas);
@@ -210,6 +234,12 @@ class ObjectMaskEditorDialog : Dialog() {
 
             this.__maskEditor = {
                 setBrushColor: (color) => { brushColor = color || '#000000'; },
+                setMaskOpacity: (opacity) => {
+                    const value = Number(opacity);
+                    const normalized = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.42;
+                    baseMaskCanvas.style.opacity = String(normalized);
+                    editMaskCanvas.style.opacity = String(normalized);
+                },
                 exportMask: async () => {
                     await new Promise((resolve) => {
                         const checkReady = () => {
@@ -239,7 +269,8 @@ class ObjectMaskEditorDialog : Dialog() {
             """.trimIndent(),
             sourceImageUrl,
             maskImageUrl,
-            objectName
+            objectName,
+            initialMaskOpacity
         )
     }
 
@@ -252,6 +283,17 @@ class ObjectMaskEditorDialog : Dialog() {
             }
             """.trimIndent(),
             normalized
+        )
+    }
+
+    private fun applyMaskOpacity(opacity: Double) {
+        canvasWrap?.element?.executeJs(
+            """
+            if (this.__maskEditor) {
+                this.__maskEditor.setMaskOpacity($0);
+            }
+            """.trimIndent(),
+            opacity
         )
     }
 
