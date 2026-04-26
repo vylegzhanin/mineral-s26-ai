@@ -2421,11 +2421,30 @@ class MainView : VerticalLayout() {
         val colorByPhase = grainClassColorMapForCurrentDataset()
         val objectColor = normalizeMaskColor(obj.properties["mask_color_rgb"])
         val objectPhase = obj.properties["grain_class"]?.trim().orEmpty()
-        val resolvedColors = colorByPhase.toMutableMap().apply {
-            if (!objectPhase.isNullOrBlank() && !objectColor.isNullOrBlank()) {
-                this[objectPhase] = objectColor
+        val phasesInObject = linkedSetOf<String>().apply {
+            if (objectPhase.isNotBlank() && objectPhase != MULTIPHASE_CLASS_NAME) add(objectPhase)
+            val phaseJson = obj.properties["phase_area_shares"].orEmpty().trim()
+            if (phaseJson.isNotBlank()) {
+                val root = runCatching { jsonMapper.readTree(phaseJson) }.getOrNull()
+                if (root != null && root.isObject) {
+                    root.properties().forEach { (phaseName, _) ->
+                        val clean = phaseName.trim()
+                        if (clean.isNotBlank() && clean != MULTIPHASE_CLASS_NAME) add(clean)
+                    }
+                }
             }
         }
+        val resolvedColors = phasesInObject
+            .mapNotNull { phaseName ->
+                val resolvedColor = if (phaseName == objectPhase && !objectColor.isNullOrBlank()) {
+                    objectColor
+                } else {
+                    colorByPhase[phaseName]
+                }
+                val normalized = normalizeMaskColor(resolvedColor).orEmpty()
+                if (normalized.isBlank()) null else phaseName to normalized
+            }
+            .toMap()
 
         maskEditorDialog.openEditor(
             objectName = obj.name,

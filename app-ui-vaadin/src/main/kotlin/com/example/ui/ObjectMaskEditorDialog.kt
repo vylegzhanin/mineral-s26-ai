@@ -1,5 +1,6 @@
 package com.example.ui
 
+import com.vaadin.flow.component.ItemLabelGenerator
 import com.vaadin.flow.component.button.Button
 import com.vaadin.flow.component.dialog.Dialog
 import com.vaadin.flow.component.html.Div
@@ -26,7 +27,7 @@ class ObjectMaskEditorDialog : Dialog() {
         canvasHost.setSizeFull()
 
         brushColorSelect.label = "Кисть"
-        brushColorSelect.itemLabelGenerator = { it?.title.orEmpty() }
+        brushColorSelect.itemLabelGenerator = ItemLabelGenerator { it?.title.orEmpty() }
         brushColorSelect.setRenderer(
             ComponentRenderer { option ->
                 val colorDot = Div().apply {
