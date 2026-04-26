@@ -15,6 +15,7 @@ import java.util.UUID
 class ObjectMaskEditorDialog : Dialog() {
     private val canvasHost = Div()
     private val brushColorSelect = Select<BrushOption>()
+    private val selectedBrushColorDot = Div()
     private var canvasWrap: Div? = null
 
     init {
@@ -48,13 +49,24 @@ class ObjectMaskEditorDialog : Dialog() {
         )
 
         brushColorSelect.addValueChangeListener {
-            applyBrushColor(it.value?.color ?: "#000000")
+            val selectedColor = it.value?.color ?: "#000000"
+            updateSelectedBrushColorDot(selectedColor)
+            applyBrushColor(selectedColor)
         }
 
-        val controls = HorizontalLayout(brushColorSelect).apply {
+        selectedBrushColorDot.style["width"] = "14px"
+        selectedBrushColorDot.style["height"] = "14px"
+        selectedBrushColorDot.style["border-radius"] = "999px"
+        selectedBrushColorDot.style["border"] = "1px solid rgba(0,0,0,0.35)"
+        selectedBrushColorDot.style["background"] = "#000000"
+        selectedBrushColorDot.style["flex-shrink"] = "0"
+
+        val controls = HorizontalLayout(selectedBrushColorDot, brushColorSelect).apply {
             isPadding = false
             isSpacing = true
             width = "100%"
+            style["align-items"] = "center"
+            style["gap"] = "8px"
         }
 
         val content = VerticalLayout(
@@ -99,6 +111,7 @@ class ObjectMaskEditorDialog : Dialog() {
             }
         brushColorSelect.setItems(options)
         brushColorSelect.value = options.first()
+        updateSelectedBrushColorDot(options.first().color)
 
         footer.removeAll()
         footer.add(
@@ -271,6 +284,11 @@ class ObjectMaskEditorDialog : Dialog() {
             """.trimIndent(),
             normalized
         )
+    }
+
+    private fun updateSelectedBrushColorDot(color: String) {
+        val normalized = normalizeBrushHex(color) ?: "#000000"
+        selectedBrushColorDot.style["background"] = normalized
     }
 
     private fun normalizeBrushHex(color: String?): String? {
