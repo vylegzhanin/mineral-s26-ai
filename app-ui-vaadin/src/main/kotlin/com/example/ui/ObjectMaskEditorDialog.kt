@@ -8,7 +8,7 @@ import com.vaadin.flow.component.html.Span
 import com.vaadin.flow.component.menubar.MenuBar
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout
 import com.vaadin.flow.component.orderedlayout.VerticalLayout
-import com.vaadin.flow.component.textfield.NumberField
+import com.vaadin.flow.component.slider.Slider
 import java.util.UUID
 
 class ObjectMaskEditorDialog : Dialog() {
@@ -18,12 +18,9 @@ class ObjectMaskEditorDialog : Dialog() {
 
     private val canvasHost = Div()
     private val brushColorMenuBar = MenuBar()
-    private val maskOpacityField = NumberField().apply {
-        min = 0.0
-        max = 1.0
+    private val maskOpacitySlider = Slider(0.0, 1.0, DEFAULT_MASK_OPACITY).apply {
         step = 0.01
-        value = DEFAULT_MASK_OPACITY
-        width = "110px"
+        width = "180px"
     }
     private var brushOptions: List<BrushOption> = listOf(BrushOption("Фон", "#000000"))
     private var selectedBrushOption: BrushOption = brushOptions.first()
@@ -41,15 +38,11 @@ class ObjectMaskEditorDialog : Dialog() {
         brushColorMenuBar.style["padding"] = "0"
         brushColorMenuBar.style["margin"] = "0"
         rebuildBrushColorMenu()
-        maskOpacityField.element.setAttribute("title", "Прозрачность маски")
-        maskOpacityField.addValueChangeListener {
-            val value = (it.value ?: DEFAULT_MASK_OPACITY).coerceIn(0.0, 1.0)
-            if (maskOpacityField.value != value) {
-                maskOpacityField.value = value
-            }
-            applyMaskOpacity(value)
+        maskOpacitySlider.element.setAttribute("title", "Прозрачность маски")
+        maskOpacitySlider.addValueChangeListener {
+            applyMaskOpacity(it.value.coerceIn(0.0, 1.0))
         }
-        val controls = HorizontalLayout(brushColorMenuBar, Span("Прозрачность"), maskOpacityField).apply {
+        val controls = HorizontalLayout(brushColorMenuBar, Span("Прозрачность"), maskOpacitySlider).apply {
             isPadding = false
             isSpacing = true
             width = "100%"
@@ -100,7 +93,7 @@ class ObjectMaskEditorDialog : Dialog() {
         brushOptions = options
         selectedBrushOption = brushOptions.first()
         applyBrushColor(selectedBrushOption.color)
-        maskOpacityField.value = DEFAULT_MASK_OPACITY
+        maskOpacitySlider.value = DEFAULT_MASK_OPACITY
         applyMaskOpacity(DEFAULT_MASK_OPACITY)
         rebuildBrushColorMenu()
 
@@ -124,7 +117,7 @@ class ObjectMaskEditorDialog : Dialog() {
         )
 
         open()
-        setupEditor(currentCanvasWrap, objectName, sourceImageUrl, maskImageUrl, maskOpacityField.value ?: DEFAULT_MASK_OPACITY)
+        setupEditor(currentCanvasWrap, objectName, sourceImageUrl, maskImageUrl, maskOpacitySlider.value)
     }
 
     private fun setupEditor(
