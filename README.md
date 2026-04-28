@@ -70,3 +70,18 @@ Note: collaboration-engine is intentionally allowed for Vaadin 24.5+ because Vaa
 ## Runtime notes
 - app-ui-vaadin is packaged as an executable Spring Boot jar via spring-boot-maven-plugin repackage.
 - app-edge-ktor includes logback-classic so SLF4J has a provider at runtime.
+
+## PostgreSQL bootstrap (Ktor)
+
+`app-edge-ktor` now contains an initial PostgreSQL storage bootstrap:
+- Flyway migrations from `app-edge-ktor/src/main/resources/db/migration`
+- jOOQ-based repository implementations for dataset objects and history (undo/redo foundation)
+- JSONB values are encoded/decoded via `kotlinx.serialization` (`JsonObject`) for typed JSON handling
+- HikariCP datasource bootstrap from environment variables
+
+Environment variables:
+- `APP_DB_URL` (example: `jdbc:postgresql://localhost:5432/app`)
+- `APP_DB_USER`
+- `APP_DB_PASSWORD`
+- `APP_DB_MIGRATE_ON_START` (`true` by default)
+- `APP_DB_POOL_SIZE` (`8` by default)
