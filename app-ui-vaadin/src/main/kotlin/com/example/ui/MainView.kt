@@ -782,7 +782,7 @@ class MainView : VerticalLayout() {
         val valueCount = maxOf(embeddingColumnNames.size, objects.maxOfOrNull { it.embeddings.size } ?: 0)
         val leftPadding = 2
         val rightPadding = 2
-        val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size * 2).coerceAtMost(maxLabelWidth + font.size)
+        val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size * 3).coerceAtMost(maxLabelWidth + font.size * 2)
         val bottomPadding = (maxLabelWidth + chessShift + 4).coerceAtLeast(18)
         val width = (leftPadding + rightPadding + (valueCount.coerceAtLeast(1) * columnWidth)).coerceAtLeast(1)
         val height = plotHeight + bottomPadding
@@ -804,7 +804,7 @@ class MainView : VerticalLayout() {
                 obj.embeddings.forEachIndexed { pointIndex, value ->
                     val x = (leftPadding + pointIndex * columnWidth + columnWidth / 2).coerceIn(0, width - 1)
                     val y = normalizedY(value)
-                    graphics.fillRect(
+                    graphics.fillOval(
                         (x - pointSize / 2).coerceAtLeast(0),
                         (y - pointSize / 2).coerceAtLeast(0),
                         pointSize,
