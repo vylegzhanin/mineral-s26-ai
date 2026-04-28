@@ -38,6 +38,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.mvysny.kaributools.addIconItem
 import org.slf4j.LoggerFactory
 import java.awt.Color
+import java.awt.Font
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
@@ -666,13 +667,15 @@ class MainView : VerticalLayout() {
             showError("У выбранных объектов нет embeddings.")
             return
         }
-        val expectedLength = withEmbeddings.maxOf { it.embeddings.size }
+        val embeddingColumnNames = withEmbeddings
+            .map { it.embeddingColumnNames }
+            .maxByOrNull { it.size }
+            .orEmpty()
         val allValues = withEmbeddings.asSequence().flatMap { it.embeddings.asSequence() }.toList()
         val minValue = allValues.minOrNull() ?: 0.0
         val maxValue = allValues.maxOrNull() ?: 0.0
         val denominator = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
         val chartHeight = 300
-        val chartWidth = expectedLength
 
         fun normalizedY(value: Double): Int {
             val normalized = ((value - minValue) / denominator).coerceIn(0.0, 1.0)
@@ -680,8 +683,7 @@ class MainView : VerticalLayout() {
         }
         val chartBytes = renderEmbeddingsPlotPng(
             objects = withEmbeddings,
-            width = chartWidth,
-            height = chartHeight,
+            embeddingColumnNames = embeddingColumnNames,
             normalizedY = ::normalizedY
         )
         val chartResource = StreamResource("embeddings-${System.currentTimeMillis()}.png") {
@@ -692,13 +694,31 @@ class MainView : VerticalLayout() {
             .eachCount()
             .toList()
             .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
+        val phaseColorByName = withEmbeddings
+            .asSequence()
+            .mapNotNull { obj ->
+                val phaseName = obj.properties["grain_class"]?.trim().orEmpty().ifBlank { obj.name }
+                val color = normalizeMaskColor(obj.properties["mask_color_rgb"]).orEmpty().takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                phaseName to color
+            }
+            .distinct()
+            .toMap()
         val legend = VerticalLayout().apply {
             isPadding = false
             isSpacing = false
             style["gap"] = "4px"
             add(H5("Распределение по фазам"))
             phaseCounts.forEach { (phaseName, count) ->
-                add(Span("• $phaseName — $count"))
+                add(
+                    HorizontalLayout(
+                        colorDot(phaseColorByName[phaseName]),
+                        Span("$phaseName — $count")
+                    ).apply {
+                        isPadding = false
+                        isSpacing = true
+                        alignItems = FlexComponent.Alignment.CENTER
+                    }
+                )
             }
         }
         val dialog = Dialog().apply {
@@ -735,27 +755,51 @@ class MainView : VerticalLayout() {
 
     private fun renderEmbeddingsPlotPng(
         objects: List<DatasetObject>,
-        width: Int,
-        height: Int,
+        embeddingColumnNames: List<String>,
         normalizedY: (Double) -> Int
     ): ByteArray {
-        val image = BufferedImage(width.coerceAtLeast(1), height.coerceAtLeast(1), BufferedImage.TYPE_INT_ARGB)
+        val plotHeight = 300
+        val font = Font("SansSerif", Font.PLAIN, 9)
+        val labelImage = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB)
+        val labelGraphics = labelImage.createGraphics()
+        labelGraphics.font = font
+        val maxLabelWidth = embeddingColumnNames.maxOfOrNull { labelGraphics.fontMetrics.stringWidth(it) } ?: 0
+        labelGraphics.dispose()
+
+        val columnWidth = (maxLabelWidth / 3).coerceIn(8, 48)
+        val valueCount = maxOf(embeddingColumnNames.size, objects.maxOfOrNull { it.embeddings.size } ?: 0)
+        val leftPadding = 8
+        val rightPadding = 8
+        val bottomPadding = (maxLabelWidth + 10).coerceAtLeast(30)
+        val width = (leftPadding + rightPadding + (valueCount.coerceAtLeast(1) * columnWidth)).coerceAtLeast(1)
+        val height = plotHeight + bottomPadding
+        val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
         val graphics = image.createGraphics()
         try {
             graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
             graphics.color = Color.WHITE
             graphics.fillRect(0, 0, width, height)
             graphics.color = Color(208, 208, 208)
-            graphics.drawLine(0, height - 1, width, height - 1)
-            graphics.drawLine(0, 0, 0, height)
+            graphics.drawLine(leftPadding, plotHeight - 1, width - rightPadding, plotHeight - 1)
+            graphics.drawLine(leftPadding, 0, leftPadding, plotHeight)
 
             objects.forEachIndexed { index, obj ->
                 graphics.color = colorForSeries(index)
                 obj.embeddings.forEachIndexed { pointIndex, value ->
-                    val x = pointIndex.coerceIn(0, width - 1)
+                    val x = (leftPadding + pointIndex * columnWidth + columnWidth / 2).coerceIn(0, width - 1)
                     val y = normalizedY(value)
                     graphics.fillRect((x - 1).coerceAtLeast(0), (y - 1).coerceAtLeast(0), 3, 3)
                 }
+            }
+            graphics.color = Color(90, 90, 90)
+            graphics.font = font
+            embeddingColumnNames.forEachIndexed { index, rawLabel ->
+                val x = leftPadding + index * columnWidth + columnWidth / 2
+                val y = plotHeight + maxLabelWidth + 2
+                val originalTransform = graphics.transform
+                graphics.rotate(-Math.PI / 2, x.toDouble(), y.toDouble())
+                graphics.drawString(rawLabel, x.toFloat(), y.toFloat())
+                graphics.transform = originalTransform
             }
         } finally {
             graphics.dispose()
@@ -1814,10 +1858,10 @@ class MainView : VerticalLayout() {
         }
         val datasetName = datasetPath.fileName?.toString().orEmpty()
         val embeddingsCsvPath = datasetPath.resolve("$datasetName.csv")
-        val csvEmbeddings = if (Files.exists(embeddingsCsvPath)) {
+        val parsedEmbeddingsCsv = if (Files.exists(embeddingsCsvPath)) {
             parseEmbeddingsCsv(embeddingsCsvPath)
         } else {
-            emptyMap()
+            ParsedEmbeddingsCsv.EMPTY
         }
 
         val rawBySuffix = rawImages.associateBy { it.fileName.toString().removePrefix("img-").removeSuffix(".png") }
@@ -1866,7 +1910,8 @@ class MainView : VerticalLayout() {
                         sourceImagePath = sourceImagePath,
                         maskImagePath = maskImagePath,
                         legend = legend,
-                        csvRowsBySourceImage = csvEmbeddings,
+                        csvRowsBySourceImage = parsedEmbeddingsCsv.rowsBySourceImage,
+                        embeddingColumnNames = parsedEmbeddingsCsv.embeddingColumnNames,
                         cacheDir = cacheDir,
                         cancelRequested = cancelRequested
                     )
@@ -1901,6 +1946,7 @@ class MainView : VerticalLayout() {
                 category = cached.category,
                 previewUrl = cacheDir.resolve(cached.previewFileName).toString(),
                 embeddings = cached.embeddings,
+                embeddingColumnNames = cached.embeddingColumnNames,
                 properties = properties
             )
         }
@@ -1947,6 +1993,7 @@ class MainView : VerticalLayout() {
         maskImagePath: Path,
         legend: Map<Int, String>,
         csvRowsBySourceImage: Map<String, List<CsvEmbeddingRow>>,
+        embeddingColumnNames: List<String>,
         cacheDir: Path,
         cancelRequested: AtomicBoolean
     ): List<CachedDatasetObject> {
@@ -2004,6 +2051,7 @@ class MainView : VerticalLayout() {
                     category = "OreGrain",
                     previewFileName = previewFileName,
                     embeddings = embeddings,
+                    embeddingColumnNames = embeddingColumnNames,
                     properties = mapOf(
                         "dataset" to datasetDirectoryName,
                         "grain_id" to "$suffix-$grainCounter",
@@ -2039,6 +2087,7 @@ class MainView : VerticalLayout() {
         maskImagePath: Path,
         legend: Map<Int, String>,
         csvRowsBySourceImage: Map<String, List<CsvEmbeddingRow>>,
+        embeddingColumnNames: List<String>,
         cacheDir: Path,
         cancelRequested: AtomicBoolean
     ): List<CachedDatasetObject> {
@@ -2054,6 +2103,7 @@ class MainView : VerticalLayout() {
                     maskImagePath = maskImagePath,
                     legend = legend,
                     csvRowsBySourceImage = csvRowsBySourceImage,
+                    embeddingColumnNames = embeddingColumnNames,
                     cacheDir = cacheDir,
                     cancelRequested = cancelRequested
                 )
@@ -2289,10 +2339,10 @@ class MainView : VerticalLayout() {
         return digest.digest().joinToString("") { "%02x".format(it) }.take(16)
     }
 
-    private fun parseEmbeddingsCsv(csvPath: Path): Map<String, List<CsvEmbeddingRow>> {
+    private fun parseEmbeddingsCsv(csvPath: Path): ParsedEmbeddingsCsv {
         val rowsBySourceImage = linkedMapOf<String, MutableList<CsvEmbeddingRow>>()
         Files.newBufferedReader(csvPath).use { reader ->
-            val header = reader.readLine() ?: return emptyMap()
+            val header = reader.readLine() ?: return ParsedEmbeddingsCsv.EMPTY
             val columns = header.split(",")
             val imageIndex = columns.indexOf("image")
             val xIndex = columns.indexOf("x₀").takeIf { it >= 0 } ?: columns.indexOf("x0")
@@ -2300,8 +2350,9 @@ class MainView : VerticalLayout() {
             val embeddingStartIndex = columns.indexOf("L")
             if (imageIndex < 0 || xIndex < 0 || yIndex < 0 || embeddingStartIndex < 0) {
                 log.warn("CSV {} пропущен: отсутствуют обязательные столбцы image/x₀/y₀/L.", csvPath.fileName)
-                return emptyMap()
+                return ParsedEmbeddingsCsv.EMPTY
             }
+            val embeddingColumnNames = columns.subList(embeddingStartIndex, columns.size).map { it.trim() }
 
             reader.lineSequence().forEach { line ->
                 if (line.isBlank()) return@forEach
@@ -2317,8 +2368,12 @@ class MainView : VerticalLayout() {
                 val row = CsvEmbeddingRow(x = x, y = y, embeddings = embeddings)
                 rowsBySourceImage.getOrPut(sourceImageName) { mutableListOf() }.add(row)
             }
+            return ParsedEmbeddingsCsv(
+                rowsBySourceImage = rowsBySourceImage.mapValues { (_, rows) -> rows.toList() },
+                embeddingColumnNames = embeddingColumnNames
+            )
         }
-        return rowsBySourceImage
+        return ParsedEmbeddingsCsv.EMPTY
     }
 
     private fun sourceImageNameFromCsvImage(imageName: String): String? {
@@ -2368,6 +2423,9 @@ class MainView : VerticalLayout() {
             val embeddingsNode = mapper.createArrayNode()
             item.embeddings.forEach { embeddingsNode.add(it) }
             node.set<com.fasterxml.jackson.databind.JsonNode>("embeddings", embeddingsNode)
+            val embeddingColumnsNode = mapper.createArrayNode()
+            item.embeddingColumnNames.forEach { embeddingColumnsNode.add(it) }
+            node.set<com.fasterxml.jackson.databind.JsonNode>("embeddingColumnNames", embeddingColumnsNode)
             val propertiesNode = mapper.createObjectNode()
             item.properties.forEach { (k, v) -> propertiesNode.put(k, v) }
             node.set<com.fasterxml.jackson.databind.JsonNode>("properties", propertiesNode)
@@ -2390,12 +2448,16 @@ class MainView : VerticalLayout() {
                 ?.mapNotNull { value -> if (value.isNumber) value.asDouble() else null }
                 ?.toDoubleArray()
                 ?: doubleArrayOf()
+            val embeddingColumnNames = node.path("embeddingColumnNames")
+                .takeIf { it.isArray }
+                ?.mapNotNull { value -> value.asText(null) }
+                ?: emptyList()
             val propertiesNode = node.path("properties")
             val props = mutableMapOf<String, String>()
             if (propertiesNode.isObject) {
                 propertiesNode.properties().forEach { (k, v) -> props[k] = v.asText() }
             }
-            CachedDatasetObject(id, name, category, preview, embeddings, props)
+            CachedDatasetObject(id, name, category, preview, embeddings, embeddingColumnNames, props)
         }
     }
 
@@ -3703,6 +3765,7 @@ private data class DatasetObject(
     val category: String,
     val previewUrl: String,
     val embeddings: DoubleArray = doubleArrayOf(),
+    val embeddingColumnNames: List<String> = emptyList(),
     val properties: MutableMap<String, String>,
     val sourceProjectId: String? = null,
     val sourceProjectName: String? = null
@@ -3727,6 +3790,7 @@ private data class CachedDatasetObject(
     val category: String,
     val previewFileName: String,
     val embeddings: DoubleArray = doubleArrayOf(),
+    val embeddingColumnNames: List<String> = emptyList(),
     val properties: Map<String, String>
 )
 
@@ -3735,6 +3799,18 @@ private data class CsvEmbeddingRow(
     val y: Int,
     val embeddings: DoubleArray
 )
+
+private data class ParsedEmbeddingsCsv(
+    val rowsBySourceImage: Map<String, List<CsvEmbeddingRow>>,
+    val embeddingColumnNames: List<String>
+) {
+    companion object {
+        val EMPTY = ParsedEmbeddingsCsv(
+            rowsBySourceImage = emptyMap(),
+            embeddingColumnNames = emptyList()
+        )
+    }
+}
 
 private data class ObjectClassInfo(
     val grainClass: String,
