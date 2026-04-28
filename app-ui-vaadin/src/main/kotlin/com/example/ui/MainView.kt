@@ -742,8 +742,11 @@ class MainView : VerticalLayout() {
                             style["display"] = "block"
                             style["cursor"] = "zoom-in"
                         }
+                        val chartHref = ui.orElseThrow {
+                            IllegalStateException("UI context is not available for chart link registration.")
+                        }.session.resourceRegistry.registerResource(chartResource).resourceUri.toString()
                         add(
-                            Anchor(chartResource, chartImage).apply {
+                            Anchor(chartHref, chartImage).apply {
                                 target = "_blank"
                                 element.setAttribute("title", "Открыть график в новой вкладке")
                                 style["display"] = "block"
