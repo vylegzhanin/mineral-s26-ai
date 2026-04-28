@@ -818,9 +818,14 @@ class MainView : VerticalLayout() {
             embeddingColumnNames.forEachIndexed { index, rawLabel ->
                 val x = leftPadding + index * columnWidth + columnWidth / 2
                 val y = plotHeight + maxLabelWidth + 2 + if (index % 2 == 0) 0 else chessShift
-                graphics.color = Color(190, 190, 190)
-                graphics.drawLine(x, plotHeight - 1, x, y - maxLabelWidth - 2)
+                val guideLineEndY = (y - font.size - 2).coerceAtLeast(plotHeight + 2)
+                graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.22f)
+                graphics.color = Color(175, 175, 175)
+                graphics.drawLine(x, plotHeight - 1, x, guideLineEndY)
+                graphics.composite = AlphaComposite.SrcOver
                 graphics.color = Color(90, 90, 90)
+                graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+                graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON)
                 val originalTransform = graphics.transform
                 graphics.rotate(-Math.PI / 2, x.toDouble(), y.toDouble())
                 graphics.drawString(rawLabel, x.toFloat(), y.toFloat())
