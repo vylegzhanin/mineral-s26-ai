@@ -725,8 +725,8 @@ class MainView : VerticalLayout() {
                         style["background"] = "white"
                         setWidthFull()
                         add(Image(chartResource, "Embeddings").apply {
-                            width = "${chartWidth}px"
-                            height = "${chartHeight}px"
+                            setWidthFull()
+                            style["height"] = "auto"
                             style["display"] = "block"
                         })
                     },
@@ -760,17 +760,10 @@ class MainView : VerticalLayout() {
 
             objects.forEachIndexed { index, obj ->
                 graphics.color = colorForSeries(index)
-                var previousX = -1
-                var previousY = -1
                 obj.embeddings.forEachIndexed { pointIndex, value ->
                     val x = pointIndex.coerceIn(0, width - 1)
                     val y = normalizedY(value)
-                    if (previousX >= 0) {
-                        graphics.drawLine(previousX, previousY, x, y)
-                    }
                     graphics.fillRect((x - 1).coerceAtLeast(0), (y - 1).coerceAtLeast(0), 3, 3)
-                    previousX = x
-                    previousY = y
                 }
             }
         } finally {
