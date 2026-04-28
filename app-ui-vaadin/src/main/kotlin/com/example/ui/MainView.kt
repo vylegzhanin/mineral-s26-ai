@@ -687,27 +687,18 @@ class MainView : VerticalLayout() {
         val chartResource = StreamResource("embeddings-${System.currentTimeMillis()}.png") {
             ByteArrayInputStream(chartBytes)
         }
+        val phaseCounts = withEmbeddings
+            .groupingBy { obj -> obj.properties["grain_class"]?.trim().orEmpty().ifBlank { obj.name } }
+            .eachCount()
+            .toList()
+            .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
         val legend = VerticalLayout().apply {
             isPadding = false
             isSpacing = false
             style["gap"] = "4px"
-            withEmbeddings.forEachIndexed { index, obj ->
-                val color = "hsl(${(index * 53) % 360}, 70%, 45%)"
-                add(
-                    HorizontalLayout(
-                        Div().apply {
-                            style["width"] = "10px"
-                            style["height"] = "10px"
-                            style["border-radius"] = "50%"
-                            style["background"] = color
-                        },
-                        Span("${obj.name} (${obj.embeddings.size})")
-                    ).apply {
-                        isPadding = false
-                        isSpacing = true
-                        alignItems = FlexComponent.Alignment.CENTER
-                    }
-                )
+            add(H5("Распределение по фазам"))
+            phaseCounts.forEach { (phaseName, count) ->
+                add(Span("• $phaseName — $count"))
             }
         }
         val dialog = Dialog().apply {
@@ -726,7 +717,7 @@ class MainView : VerticalLayout() {
                         setWidthFull()
                         add(Image(chartResource, "Embeddings").apply {
                             setWidthFull()
-                            style["height"] = "auto"
+                            height = "${chartHeight}px"
                             style["display"] = "block"
                         })
                     },
