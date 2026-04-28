@@ -723,7 +723,9 @@ class MainView : VerticalLayout() {
         val dialog = Dialog().apply {
             headerTitle = "Embeddings (${withEmbeddings.size} объектов)"
             width = "min(95vw, 1200px)"
-            height = "min(90vh, 760px)"
+            height = "auto"
+            maxHeight = "90vh"
+            style["overflow"] = "hidden"
         }
         val chartProgress = ProgressBar().apply {
             isIndeterminate = true
@@ -735,7 +737,7 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "8px"
             style["padding"] = "32px"
             style["background"] = "white"
-            style["height"] = "420px"
+            style["height"] = "min(52vh, 420px)"
             setWidthFull()
             add(Paragraph("Построение графика…"))
         }
