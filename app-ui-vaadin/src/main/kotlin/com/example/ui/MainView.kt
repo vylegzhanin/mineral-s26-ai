@@ -843,13 +843,20 @@ class MainView : VerticalLayout() {
         val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
         val graphics = image.createGraphics()
         try {
-            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
+            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             graphics.color = Color.WHITE
             graphics.fillRect(0, 0, width, height)
             graphics.color = Color(208, 208, 208)
             val axisY = topPadding + plotHeight - 1
             graphics.drawLine(leftPadding, axisY, width - rightPadding, axisY)
             graphics.drawLine(leftPadding, topPadding, leftPadding, topPadding + plotHeight)
+            embeddingColumnNames.forEachIndexed { index, _ ->
+                val x = leftPadding + index * columnWidth + columnWidth / 2
+                graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.08f)
+                graphics.color = Color(175, 175, 175)
+                graphics.drawLine(x, topPadding, x, axisY)
+            }
+            graphics.composite = AlphaComposite.SrcOver
 
             val densityAlpha = (1.6f / objects.size.coerceAtLeast(1)).coerceIn(0.12f, 0.85f)
             objects.forEach { obj ->
