@@ -723,8 +723,7 @@ class MainView : VerticalLayout() {
         val dialog = Dialog().apply {
             headerTitle = "Embeddings (${withEmbeddings.size} объектов)"
             width = "min(95vw, 1200px)"
-            height = "auto"
-            maxHeight = "90vh"
+            height = "90vh"
         }
         val chartProgress = ProgressBar().apply {
             isIndeterminate = true
@@ -736,22 +735,25 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "8px"
             style["padding"] = "32px"
             style["background"] = "white"
-            style["height"] = "min(52vh, 420px)"
+            style["height"] = "100%"
+            style["min-height"] = "0"
             setWidthFull()
             add(Paragraph("Построение графика…"))
         }
-        dialog.add(
-            VerticalLayout(
-                Paragraph("Нормализация по текущей выборке: min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
-                chartProgress,
-                chartHost,
-                legend
-            ).apply {
-                isPadding = false
-                isSpacing = true
-                setWidthFull()
-            }
-        )
+        val dialogContent = VerticalLayout(
+            Paragraph("Нормализация по текущей выборке: min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
+            chartProgress,
+            chartHost,
+            legend
+        ).apply {
+            isPadding = false
+            isSpacing = true
+            setSizeFull()
+            style["overflow"] = "hidden"
+            style["min-height"] = "0"
+            expand(chartHost)
+        }
+        dialog.add(dialogContent)
         dialog.footer.add(Button("Закрыть") { dialog.close() })
         dialog.open()
 
