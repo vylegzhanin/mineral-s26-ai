@@ -722,8 +722,8 @@ class MainView : VerticalLayout() {
         }
         val dialog = Dialog().apply {
             headerTitle = "Embeddings (${withEmbeddings.size} объектов)"
-            width = "min(95vw, ${plotLayout.width + 160}px)"
-            height = "min(90vh, ${plotLayout.height + 280}px)"
+            width = "min(95vw, 1200px)"
+            height = "min(90vh, 760px)"
         }
         val chartProgress = ProgressBar().apply {
             isIndeterminate = true
@@ -735,7 +735,7 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "8px"
             style["padding"] = "32px"
             style["background"] = "white"
-            style["min-height"] = "${plotLayout.height + 64}px"
+            style["height"] = "420px"
             setWidthFull()
             add(Paragraph("Построение графика…"))
         }
@@ -776,7 +776,7 @@ class MainView : VerticalLayout() {
                     ByteArrayInputStream(chartBytes)
                 }
                 val chartImage = Image(chartResource, "Embeddings").apply {
-                    setWidthFull()
+                    width = "${plotLayout.width}px"
                     style["height"] = "auto"
                     style["display"] = "block"
                     style["cursor"] = "zoom-in"
@@ -890,7 +890,7 @@ class MainView : VerticalLayout() {
         val rightPadding = 2
         val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size * 4)
         val extraRowGap = font.size * 2
-        val bottomPadding = (maxLabelWidth + chessShift + extraRowGap + 4).coerceAtLeast(18)
+        val bottomPadding = (maxLabelWidth + chessShift + extraRowGap + font.size * 3).coerceAtLeast(24)
         val width = (leftPadding + rightPadding + (valueCount.coerceAtLeast(1) * columnWidth)).coerceAtLeast(1)
         val height = 300 + bottomPadding
 
