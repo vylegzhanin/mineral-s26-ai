@@ -771,6 +771,7 @@ class MainView : VerticalLayout() {
                     element.setAttribute("title", "Открыть график в новой вкладке")
                     style["display"] = "block"
                     setWidthFull()
+                    style["box-sizing"] = "border-box"
                     add(chartImage)
                 }
                 val dialog = Dialog().apply {
@@ -784,10 +785,12 @@ class MainView : VerticalLayout() {
                     style["padding"] = "16px"
                     style["background"] = "white"
                     style["overflow"] = "hidden"
+                    style["box-sizing"] = "border-box"
                     setWidthFull()
                     add(chartLink)
                 }
                 chartImage.style["max-height"] = "58vh"
+                chartImage.style["max-width"] = "100%"
                 chartImage.style["object-fit"] = "contain"
                 dialog.add(
                     VerticalLayout(
