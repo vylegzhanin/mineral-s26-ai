@@ -94,6 +94,10 @@ class MainView : VerticalLayout() {
         addClickListener { openAddToCollectionDialog() }
         element.setAttribute("title", "Добавить отфильтрованные объекты проекта в коллекцию")
     }
+    private val showEmbeddingsButton = Button("Embeddings").apply {
+        addClickListener { openEmbeddingsDialog() }
+        element.setAttribute("title", "Показать график эмбеддингов для выбранных/отфильтрованных объектов")
+    }
     private val collectionObjectActionsMenuBar = MenuBar()
     private val grainClassFilterToolbarMenuBar = MenuBar()
     private var availableGrainClassItems: List<String> = emptyList()
@@ -644,6 +648,110 @@ class MainView : VerticalLayout() {
         dialog.open()
     }
 
+    private fun openEmbeddingsDialog() {
+        val filteredObjects = when (leftPanelMode) {
+            LeftPanelMode.PROJECTS -> selectedProject?.let { applyFilters(it.objects) }.orEmpty()
+            LeftPanelMode.COLLECTIONS -> selectedCollection?.let { applyFilters(it.objects) }.orEmpty()
+        }
+        val objectsForPlot = objectsForAction(filteredObjects)
+        if (objectsForPlot.isEmpty()) {
+            showError("Нет объектов для визуализации.")
+            return
+        }
+        val withEmbeddings = objectsForPlot.filter { it.embeddings.isNotEmpty() }
+        if (withEmbeddings.isEmpty()) {
+            showError("У выбранных объектов нет embeddings.")
+            return
+        }
+        val expectedLength = withEmbeddings.maxOf { it.embeddings.size }
+        val allValues = withEmbeddings.flatMap { it.embeddings }
+        val minValue = allValues.minOrNull() ?: 0.0
+        val maxValue = allValues.maxOrNull() ?: 0.0
+        val denominator = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
+        val chartHeight = 300
+        val chartWidth = expectedLength
+
+        fun normalizedY(value: Double): Double {
+            val normalized = ((value - minValue) / denominator).coerceIn(0.0, 1.0)
+            return chartHeight - (normalized * chartHeight)
+        }
+
+        val seriesSvg = withEmbeddings.mapIndexed { index, obj ->
+            val color = "hsl(${(index * 53) % 360}, 70%, 45%)"
+            val points = obj.embeddings.mapIndexed { pointIndex, value ->
+                "$pointIndex,${"%.2f".format(Locale.US, normalizedY(value))}"
+            }
+            val circles = obj.embeddings.mapIndexed { pointIndex, value ->
+                val y = "%.2f".format(Locale.US, normalizedY(value))
+                """<circle cx="$pointIndex" cy="$y" r="1.6" fill="$color"><title>${obj.name}[$pointIndex] = $value</title></circle>"""
+            }.joinToString("")
+            """
+            <g>
+              <polyline points="${points.joinToString(" ")}" fill="none" stroke="$color" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/>
+              $circles
+            </g>
+            """.trimIndent()
+        }.joinToString("\n")
+
+        val svg = """
+            <svg width="$chartWidth" height="$chartHeight" viewBox="0 0 $chartWidth $chartHeight" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Embeddings plot">
+              <rect x="0" y="0" width="$chartWidth" height="$chartHeight" fill="white" />
+              <line x1="0" y1="${chartHeight - 0.5}" x2="$chartWidth" y2="${chartHeight - 0.5}" stroke="#d0d0d0" stroke-width="1"/>
+              <line x1="0.5" y1="0" x2="0.5" y2="$chartHeight" stroke="#d0d0d0" stroke-width="1"/>
+              $seriesSvg
+            </svg>
+        """.trimIndent()
+        val legend = VerticalLayout().apply {
+            isPadding = false
+            isSpacing = false
+            style["gap"] = "4px"
+            withEmbeddings.forEachIndexed { index, obj ->
+                val color = "hsl(${(index * 53) % 360}, 70%, 45%)"
+                add(
+                    HorizontalLayout(
+                        Div().apply {
+                            style["width"] = "10px"
+                            style["height"] = "10px"
+                            style["border-radius"] = "50%"
+                            style["background"] = color
+                        },
+                        Span("${obj.name} (${obj.embeddings.size})")
+                    ).apply {
+                        isPadding = false
+                        isSpacing = true
+                        alignItems = FlexComponent.Alignment.CENTER
+                    }
+                )
+            }
+        }
+        val dialog = Dialog().apply {
+            headerTitle = "Embeddings (${withEmbeddings.size} объектов)"
+            width = "min(95vw, 1200px)"
+            height = "min(90vh, 760px)"
+            add(
+                VerticalLayout(
+                    Paragraph("Нормализация по текущей выборке: min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
+                    Div().apply {
+                        style["overflow"] = "auto"
+                        style["border"] = "1px solid var(--lumo-contrast-20pct)"
+                        style["border-radius"] = "8px"
+                        style["padding"] = "8px"
+                        style["background"] = "white"
+                        setWidthFull()
+                        add(Html("<div>$svg</div>"))
+                    },
+                    legend
+                ).apply {
+                    isPadding = false
+                    isSpacing = true
+                    setWidthFull()
+                }
+            )
+        }
+        dialog.footer.add(Button("Закрыть") { dialog.close() })
+        dialog.open()
+    }
+
     private fun generateNextCollectionName(): String {
         val prefix = "Новая "
         val used = collections.mapNotNull { item ->
@@ -913,6 +1021,7 @@ class MainView : VerticalLayout() {
             objectHeader,
             HorizontalLayout(
                 addToCollectionButton,
+                showEmbeddingsButton,
                 collectionActionsMenu(),
                 cardFieldsMenu(),
                 filterAddMenu(),
