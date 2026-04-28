@@ -761,7 +761,7 @@ class MainView : VerticalLayout() {
                     ByteArrayInputStream(chartBytes)
                 }
                 val chartImage = Image(chartResource, "Embeddings").apply {
-                    width = "${plotLayout.width}px"
+                    setWidthFull()
                     style["height"] = "auto"
                     style["display"] = "block"
                     style["cursor"] = "zoom-in"
@@ -783,10 +783,10 @@ class MainView : VerticalLayout() {
                     style["border-radius"] = "8px"
                     style["padding"] = "16px"
                     style["background"] = "white"
+                    style["overflow"] = "hidden"
                     setWidthFull()
                     add(chartLink)
                 }
-                chartImage.setWidthFull()
                 chartImage.style["max-height"] = "58vh"
                 chartImage.style["object-fit"] = "contain"
                 dialog.add(
@@ -818,6 +818,7 @@ class MainView : VerticalLayout() {
         val columnWidth = layout.columnWidth
         val leftPadding = layout.leftPadding
         val rightPadding = layout.rightPadding
+        val topPadding = layout.topPadding
         val chessShift = layout.chessShift
         val extraRowGap = layout.extraRowGap
         val width = layout.width
@@ -829,8 +830,9 @@ class MainView : VerticalLayout() {
             graphics.color = Color.WHITE
             graphics.fillRect(0, 0, width, height)
             graphics.color = Color(208, 208, 208)
-            graphics.drawLine(leftPadding, plotHeight - 1, width - rightPadding, plotHeight - 1)
-            graphics.drawLine(leftPadding, 0, leftPadding, plotHeight)
+            val axisY = topPadding + plotHeight - 1
+            graphics.drawLine(leftPadding, axisY, width - rightPadding, axisY)
+            graphics.drawLine(leftPadding, topPadding, leftPadding, topPadding + plotHeight)
 
             val densityAlpha = (1.6f / objects.size.coerceAtLeast(1)).coerceIn(0.12f, 0.85f)
             objects.forEach { obj ->
@@ -839,7 +841,7 @@ class MainView : VerticalLayout() {
                 val pointSize = columnWidth.coerceAtLeast(2)
                 obj.embeddings.forEachIndexed { pointIndex, value ->
                     val x = (leftPadding + pointIndex * columnWidth + columnWidth / 2).coerceIn(0, width - 1)
-                    val y = normalizedY(value)
+                    val y = topPadding + normalizedY(value)
                     graphics.fillOval(
                         (x - pointSize / 2).coerceAtLeast(0),
                         (y - pointSize / 2).coerceAtLeast(0),
@@ -851,14 +853,14 @@ class MainView : VerticalLayout() {
             graphics.composite = AlphaComposite.SrcOver
             graphics.color = Color(90, 90, 90)
             graphics.font = font
-            val baseLabelY = plotHeight + maxLabelWidth + 2
+            val baseLabelY = axisY + maxLabelWidth + 3
             embeddingColumnNames.forEachIndexed { index, rawLabel ->
                 val x = leftPadding + index * columnWidth + columnWidth / 2
                 val y = if (index % 2 == 0) baseLabelY else baseLabelY + chessShift + extraRowGap
-                val guideLineEndY = (y - font.size - 2).coerceAtLeast(plotHeight + 2)
+                val guideLineEndY = (y - font.size - 2).coerceAtLeast(axisY + 2)
                 graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.22f)
                 graphics.color = Color(175, 175, 175)
-                graphics.drawLine(x, plotHeight - 1, x, guideLineEndY)
+                graphics.drawLine(x, axisY, x, guideLineEndY)
                 graphics.composite = AlphaComposite.SrcOver
                 graphics.color = Color(90, 90, 90)
                 graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
@@ -898,13 +900,14 @@ class MainView : VerticalLayout() {
 
         val columnWidth = (maxLabelWidth / 8).coerceIn(3, 10)
         val valueCount = maxOf(embeddingColumnNames.size, objects.maxOfOrNull { it.embeddings.size } ?: 0)
-        val leftPadding = 2
-        val rightPadding = 2
+        val leftPadding = 32
+        val rightPadding = 32
+        val topPadding = 32
         val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size * 4)
         val extraRowGap = font.size * 2
-        val bottomPadding = (maxLabelWidth + chessShift + extraRowGap + font.size * 3).coerceAtLeast(24)
+        val bottomPadding = (32 + maxLabelWidth + chessShift + extraRowGap + font.size * 3).coerceAtLeast(56)
         val width = (leftPadding + rightPadding + (valueCount.coerceAtLeast(1) * columnWidth)).coerceAtLeast(1)
-        val height = 300 + bottomPadding
+        val height = topPadding + 300 + bottomPadding
 
         return EmbeddingPlotLayout(
             width = width,
@@ -913,6 +916,7 @@ class MainView : VerticalLayout() {
             columnWidth = columnWidth,
             leftPadding = leftPadding,
             rightPadding = rightPadding,
+            topPadding = topPadding,
             chessShift = chessShift,
             extraRowGap = extraRowGap
         )
@@ -3922,6 +3926,7 @@ private data class EmbeddingPlotLayout(
     val columnWidth: Int,
     val leftPadding: Int,
     val rightPadding: Int,
+    val topPadding: Int,
     val chessShift: Int,
     val extraRowGap: Int
 )
