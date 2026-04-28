@@ -725,7 +725,6 @@ class MainView : VerticalLayout() {
             width = "min(95vw, 1200px)"
             height = "auto"
             maxHeight = "90vh"
-            style["overflow"] = "hidden"
         }
         val chartProgress = ProgressBar().apply {
             isIndeterminate = true
