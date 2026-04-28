@@ -718,6 +718,9 @@ class MainView : VerticalLayout() {
         val logScaleToggle = Checkbox("Логарифмическая нормализация (sym-log)").apply {
             value = true
         }
+        val clipRangeToggle = Checkbox("Отсечение значений к диапазону [0.0..1.0]").apply {
+            value = false
+        }
         val progressBar = ProgressBar().apply {
             isIndeterminate = true
             isVisible = false
@@ -727,6 +730,7 @@ class MainView : VerticalLayout() {
             VerticalLayout(
                 Paragraph("Подготавливаем график. Выберите режим нормализации и запустите построение."),
                 logScaleToggle,
+                clipRangeToggle,
                 progressBar
             ).apply {
                 isPadding = false
@@ -737,26 +741,32 @@ class MainView : VerticalLayout() {
         val buildButton = Button("Построить")
         buildButton.addClickListener {
             val useLogScale = logScaleToggle.value
+            val useClipRange = clipRangeToggle.value
             logScaleToggle.isEnabled = false
+            clipRangeToggle.isEnabled = false
             buildButton.isEnabled = false
             progressBar.isVisible = true
             thread(name = "embeddings-chart-render", isDaemon = true) {
-                val transformedValues = allValues.map { transformEmbeddingValue(it, useLogScale) }
-                val rawMinValue = allValues.minOrNull() ?: 0.0
-                val rawMaxValue = allValues.maxOrNull() ?: 0.0
-                val minValue = transformedValues.minOrNull() ?: 0.0
-                val maxValue = transformedValues.maxOrNull() ?: 0.0
+                val scaleValue: (Double) -> Double = { raw ->
+                    val clipped = if (useClipRange) raw.coerceIn(0.0, 1.0) else raw
+                    transformEmbeddingValue(clipped, useLogScale)
+                }
+                val transformedValues = allValues.map(scaleValue)
+                val rawMinValue = if (useClipRange) 0.0 else (allValues.minOrNull() ?: 0.0)
+                val rawMaxValue = if (useClipRange) 1.0 else (allValues.maxOrNull() ?: 0.0)
+                val minValue = transformedValues.minOrNull() ?: scaleValue(rawMinValue)
+                val maxValue = transformedValues.maxOrNull() ?: scaleValue(rawMaxValue)
                 val denominator = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
                 val chartHeight = 300
                 fun normalizedY(value: Double): Int {
-                    val transformed = transformEmbeddingValue(value, useLogScale)
+                    val transformed = scaleValue(value)
                     val normalized = ((transformed - minValue) / denominator).coerceIn(0.0, 1.0)
                     return (chartHeight - (normalized * (chartHeight - 1))).roundToInt().coerceIn(0, chartHeight - 1)
                 }
-                val yTickValues = if (rawMaxValue == rawMinValue) {
-                    listOf(rawMinValue)
-                } else {
-                    (0..4).map { index -> rawMinValue + (rawMaxValue - rawMinValue) * index.toDouble() / 4.0 }
+                val yTickValues = when {
+                    useClipRange -> listOf(0.0, 0.25, 0.5, 0.75, 1.0)
+                    rawMaxValue == rawMinValue -> listOf(rawMinValue)
+                    else -> (0..4).map { index -> rawMinValue + (rawMaxValue - rawMinValue) * index.toDouble() / 4.0 }
                 }
                 val rendered = runCatching {
                     renderEmbeddingsPlotPng(
@@ -811,9 +821,10 @@ class MainView : VerticalLayout() {
                     chartImage.style["max-width"] = "100%"
                     chartImage.style["object-fit"] = "contain"
                     val modeLabel = if (useLogScale) "Логарифмическая (sym-log)" else "Линейная"
+                    val clipLabel = if (useClipRange) "включено [0.0..1.0]" else "выключено"
                     dialog.add(
                         VerticalLayout(
-                            Paragraph("Нормализация: $modeLabel; min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
+                            Paragraph("Нормализация: $modeLabel; отсечение: $clipLabel; min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
                             chartHost,
                             legend
                         ).apply {
