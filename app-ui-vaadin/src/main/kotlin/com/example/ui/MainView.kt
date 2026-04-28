@@ -1684,6 +1684,13 @@ class MainView : VerticalLayout() {
         } else {
             emptyMap()
         }
+        val datasetName = datasetPath.fileName?.toString().orEmpty()
+        val embeddingsCsvPath = datasetPath.resolve("$datasetName.csv")
+        val csvEmbeddings = if (Files.exists(embeddingsCsvPath)) {
+            parseEmbeddingsCsv(embeddingsCsvPath)
+        } else {
+            emptyMap()
+        }
 
         val rawBySuffix = rawImages.associateBy { it.fileName.toString().removePrefix("img-").removeSuffix(".png") }
         val maskBySuffix = rgbMasks.associateBy { it.fileName.toString().removePrefix("msk_rgb-").removeSuffix(".png") }
@@ -1694,7 +1701,8 @@ class MainView : VerticalLayout() {
             datasetPath = datasetPath,
             sourceBySuffix = rawBySuffix,
             maskBySuffix = maskBySuffix,
-            commonSuffixes = commonSuffixes
+            commonSuffixes = commonSuffixes,
+            embeddingsCsvPath = embeddingsCsvPath.takeIf { Files.exists(it) }
         )
         val cacheDir = cacheRoot.resolve("$datasetDirectoryName-$datasetSignature")
         Files.createDirectories(cacheDir)
@@ -1730,6 +1738,7 @@ class MainView : VerticalLayout() {
                         sourceImagePath = sourceImagePath,
                         maskImagePath = maskImagePath,
                         legend = legend,
+                        csvRowsBySourceImage = csvEmbeddings,
                         cacheDir = cacheDir,
                         cancelRequested = cancelRequested
                     )
@@ -1763,6 +1772,7 @@ class MainView : VerticalLayout() {
                 name = cached.name,
                 category = cached.category,
                 previewUrl = cacheDir.resolve(cached.previewFileName).toString(),
+                embeddings = cached.embeddings,
                 properties = properties
             )
         }
@@ -1808,6 +1818,7 @@ class MainView : VerticalLayout() {
         sourceImagePath: Path,
         maskImagePath: Path,
         legend: Map<Int, String>,
+        csvRowsBySourceImage: Map<String, List<CsvEmbeddingRow>>,
         cacheDir: Path,
         cancelRequested: AtomicBoolean
     ): List<CachedDatasetObject> {
@@ -1821,6 +1832,8 @@ class MainView : VerticalLayout() {
         }
 
         val objects = mutableListOf<CachedDatasetObject>()
+        val sourceImageName = sourceImagePath.fileName.toString()
+        val pendingEmbeddingRows = csvRowsBySourceImage[sourceImageName]?.toMutableList() ?: mutableListOf()
         val width = mask.width
         val height = mask.height
         val visited = BooleanArray(width * height)
@@ -1841,6 +1854,11 @@ class MainView : VerticalLayout() {
                 grainCounter += 1
                 val phaseStatistics = collectPhaseStatistics(mask, component.points)
                 val objectClassInfo = resolveObjectClassInfo(phaseStatistics, legend)
+                val embeddings = if (objectClassInfo.phaseType == "single_phase") {
+                    findAndConsumeEmbeddingsForComponent(component, pendingEmbeddingRows)
+                } else {
+                    emptyList()
+                }
                 val phaseBoundaryStats = collectPhaseBoundaryStatistics(mask, component.points, legend)
                 val previewFileName = "grain-$suffix-$grainCounter.png"
                 val previewPath = cacheDir.resolve(previewFileName)
@@ -1857,6 +1875,7 @@ class MainView : VerticalLayout() {
                     name = objectClassInfo.grainClass,
                     category = "OreGrain",
                     previewFileName = previewFileName,
+                    embeddings = embeddings,
                     properties = mapOf(
                         "dataset" to datasetDirectoryName,
                         "grain_id" to "$suffix-$grainCounter",
@@ -1891,6 +1910,7 @@ class MainView : VerticalLayout() {
         sourceImagePath: Path,
         maskImagePath: Path,
         legend: Map<Int, String>,
+        csvRowsBySourceImage: Map<String, List<CsvEmbeddingRow>>,
         cacheDir: Path,
         cancelRequested: AtomicBoolean
     ): List<CachedDatasetObject> {
@@ -1905,6 +1925,7 @@ class MainView : VerticalLayout() {
                     sourceImagePath = sourceImagePath,
                     maskImagePath = maskImagePath,
                     legend = legend,
+                    csvRowsBySourceImage = csvRowsBySourceImage,
                     cacheDir = cacheDir,
                     cancelRequested = cancelRequested
                 )
@@ -2122,7 +2143,8 @@ class MainView : VerticalLayout() {
         datasetPath: Path,
         sourceBySuffix: Map<String, Path>,
         maskBySuffix: Map<String, Path>,
-        commonSuffixes: List<String>
+        commonSuffixes: List<String>,
+        embeddingsCsvPath: Path?
     ): String {
         val digest = MessageDigest.getInstance("SHA-256")
         commonSuffixes.forEach { suffix ->
@@ -2133,7 +2155,63 @@ class MainView : VerticalLayout() {
         if (Files.exists(legend)) {
             updateDigestWithFile(digest, legend)
         }
+        if (embeddingsCsvPath != null && Files.exists(embeddingsCsvPath)) {
+            updateDigestWithFile(digest, embeddingsCsvPath)
+        }
         return digest.digest().joinToString("") { "%02x".format(it) }.take(16)
+    }
+
+    private fun parseEmbeddingsCsv(csvPath: Path): Map<String, List<CsvEmbeddingRow>> {
+        val rowsBySourceImage = linkedMapOf<String, MutableList<CsvEmbeddingRow>>()
+        Files.newBufferedReader(csvPath).use { reader ->
+            val header = reader.readLine() ?: return emptyMap()
+            val columns = header.split(",")
+            val imageIndex = columns.indexOf("image")
+            val xIndex = columns.indexOf("x₀").takeIf { it >= 0 } ?: columns.indexOf("x0")
+            val yIndex = columns.indexOf("y₀").takeIf { it >= 0 } ?: columns.indexOf("y0")
+            val embeddingStartIndex = columns.indexOf("L")
+            if (imageIndex < 0 || xIndex < 0 || yIndex < 0 || embeddingStartIndex < 0) {
+                log.warn("CSV {} пропущен: отсутствуют обязательные столбцы image/x₀/y₀/L.", csvPath.fileName)
+                return emptyMap()
+            }
+
+            reader.lineSequence().forEach { line ->
+                if (line.isBlank()) return@forEach
+                val values = line.split(",")
+                if (values.size <= embeddingStartIndex) return@forEach
+                val imageName = values.getOrNull(imageIndex)?.trim().orEmpty()
+                val x = values.getOrNull(xIndex)?.trim()?.toIntOrNull() ?: return@forEach
+                val y = values.getOrNull(yIndex)?.trim()?.toIntOrNull() ?: return@forEach
+                val sourceImageName = sourceImageNameFromCsvImage(imageName) ?: return@forEach
+                val embeddings = values.subList(embeddingStartIndex, values.size)
+                    .map { it.trim().toDoubleOrNull() ?: return@forEach }
+                val row = CsvEmbeddingRow(x = x, y = y, embeddings = embeddings)
+                rowsBySourceImage.getOrPut(sourceImageName) { mutableListOf() }.add(row)
+            }
+        }
+        return rowsBySourceImage
+    }
+
+    private fun sourceImageNameFromCsvImage(imageName: String): String? {
+        val normalized = imageName.substringAfterLast('/').substringAfterLast('\\').trim()
+        if (!normalized.endsWith(".png")) return null
+        val prefix = normalized.substringBefore("_p", missingDelimiterValue = normalized.removeSuffix(".png"))
+        if (prefix.isBlank()) return null
+        return "$prefix.png"
+    }
+
+    private fun findAndConsumeEmbeddingsForComponent(
+        component: ConnectedComponent,
+        pendingRows: MutableList<CsvEmbeddingRow>
+    ): List<Double> {
+        if (pendingRows.isEmpty()) return emptyList()
+        val rowIndex = pendingRows.indexOfFirst { row ->
+            row.x in component.minX..component.maxX &&
+                row.y in component.minY..component.maxY &&
+                component.points.any { point -> point.x == row.x && point.y == row.y }
+        }
+        if (rowIndex < 0) return emptyList()
+        return pendingRows.removeAt(rowIndex).embeddings
     }
 
     private fun updateDigestWithFile(digest: MessageDigest, file: Path) {
@@ -2158,6 +2236,9 @@ class MainView : VerticalLayout() {
             node.put("name", item.name)
             node.put("category", item.category)
             node.put("previewFileName", item.previewFileName)
+            val embeddingsNode = mapper.createArrayNode()
+            item.embeddings.forEach { embeddingsNode.add(it) }
+            node.set<com.fasterxml.jackson.databind.JsonNode>("embeddings", embeddingsNode)
             val propertiesNode = mapper.createObjectNode()
             item.properties.forEach { (k, v) -> propertiesNode.put(k, v) }
             node.set<com.fasterxml.jackson.databind.JsonNode>("properties", propertiesNode)
@@ -2175,12 +2256,16 @@ class MainView : VerticalLayout() {
             val name = node.path("name").asText(null) ?: return@mapNotNull null
             val category = node.path("category").asText(null) ?: return@mapNotNull null
             val preview = node.path("previewFileName").asText(null) ?: return@mapNotNull null
+            val embeddings = node.path("embeddings")
+                .takeIf { it.isArray }
+                ?.mapNotNull { value -> if (value.isNumber) value.asDouble() else null }
+                ?: emptyList()
             val propertiesNode = node.path("properties")
             val props = mutableMapOf<String, String>()
             if (propertiesNode.isObject) {
                 propertiesNode.properties().forEach { (k, v) -> props[k] = v.asText() }
             }
-            CachedDatasetObject(id, name, category, preview, props)
+            CachedDatasetObject(id, name, category, preview, embeddings, props)
         }
     }
 
@@ -3487,6 +3572,7 @@ private data class DatasetObject(
     val name: String,
     val category: String,
     val previewUrl: String,
+    val embeddings: List<Double> = emptyList(),
     val properties: MutableMap<String, String>,
     val sourceProjectId: String? = null,
     val sourceProjectName: String? = null
@@ -3510,7 +3596,14 @@ private data class CachedDatasetObject(
     val name: String,
     val category: String,
     val previewFileName: String,
+    val embeddings: List<Double> = emptyList(),
     val properties: Map<String, String>
+)
+
+private data class CsvEmbeddingRow(
+    val x: Int,
+    val y: Int,
+    val embeddings: List<Double>
 )
 
 private data class ObjectClassInfo(
