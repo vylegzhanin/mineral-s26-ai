@@ -782,8 +782,9 @@ class MainView : VerticalLayout() {
         val valueCount = maxOf(embeddingColumnNames.size, objects.maxOfOrNull { it.embeddings.size } ?: 0)
         val leftPadding = 2
         val rightPadding = 2
-        val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size * 3).coerceAtMost(maxLabelWidth + font.size * 2)
-        val bottomPadding = (maxLabelWidth + chessShift + 4).coerceAtLeast(18)
+        val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size * 4)
+        val extraRowGap = font.size * 2
+        val bottomPadding = (maxLabelWidth + chessShift + extraRowGap + 4).coerceAtLeast(18)
         val width = (leftPadding + rightPadding + (valueCount.coerceAtLeast(1) * columnWidth)).coerceAtLeast(1)
         val height = plotHeight + bottomPadding
         val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
@@ -815,9 +816,10 @@ class MainView : VerticalLayout() {
             graphics.composite = AlphaComposite.SrcOver
             graphics.color = Color(90, 90, 90)
             graphics.font = font
+            val baseLabelY = plotHeight + maxLabelWidth + 2
             embeddingColumnNames.forEachIndexed { index, rawLabel ->
                 val x = leftPadding + index * columnWidth + columnWidth / 2
-                val y = plotHeight + maxLabelWidth + 2 + if (index % 2 == 0) 0 else chessShift
+                val y = if (index % 2 == 0) baseLabelY else baseLabelY + chessShift + extraRowGap
                 val guideLineEndY = (y - font.size - 2).coerceAtLeast(plotHeight + 2)
                 graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.22f)
                 graphics.color = Color(175, 175, 175)
