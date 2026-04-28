@@ -736,11 +736,20 @@ class MainView : VerticalLayout() {
                         style["padding"] = "8px"
                         style["background"] = "white"
                         setWidthFull()
-                        add(Image(chartResource, "Embeddings").apply {
+                        val chartImage = Image(chartResource, "Embeddings").apply {
                             setWidthFull()
                             height = "${chartHeight}px"
                             style["display"] = "block"
-                        })
+                            style["cursor"] = "zoom-in"
+                        }
+                        add(
+                            Anchor(chartResource, chartImage).apply {
+                                target = "_blank"
+                                element.setAttribute("title", "Открыть график в новой вкладке")
+                                style["display"] = "block"
+                                setWidthFull()
+                            }
+                        )
                     },
                     legend
                 ).apply {
@@ -760,18 +769,18 @@ class MainView : VerticalLayout() {
         normalizedY: (Double) -> Int
     ): ByteArray {
         val plotHeight = 300
-        val font = Font("SansSerif", Font.PLAIN, 9)
+        val font = Font("SansSerif", Font.PLAIN, 14)
         val labelImage = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB)
         val labelGraphics = labelImage.createGraphics()
         labelGraphics.font = font
         val maxLabelWidth = embeddingColumnNames.maxOfOrNull { labelGraphics.fontMetrics.stringWidth(it) } ?: 0
         labelGraphics.dispose()
 
-        val columnWidth = (maxLabelWidth / 6).coerceIn(3, 14)
+        val columnWidth = (maxLabelWidth / 8).coerceIn(3, 10)
         val valueCount = maxOf(embeddingColumnNames.size, objects.maxOfOrNull { it.embeddings.size } ?: 0)
         val leftPadding = 2
         val rightPadding = 2
-        val chessShift = font.size + 2
+        val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size / 2).coerceAtMost(maxLabelWidth)
         val bottomPadding = (maxLabelWidth + chessShift + 4).coerceAtLeast(18)
         val width = (leftPadding + rightPadding + (valueCount.coerceAtLeast(1) * columnWidth)).coerceAtLeast(1)
         val height = plotHeight + bottomPadding
@@ -785,8 +794,8 @@ class MainView : VerticalLayout() {
             graphics.drawLine(leftPadding, plotHeight - 1, width - rightPadding, plotHeight - 1)
             graphics.drawLine(leftPadding, 0, leftPadding, plotHeight)
 
-            objects.forEachIndexed { index, obj ->
-                graphics.color = colorForSeries(index)
+            objects.forEach { obj ->
+                graphics.color = colorForPhase(obj.properties["mask_color_rgb"])
                 graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.08f)
                 val pointSize = columnWidth.coerceAtLeast(2)
                 obj.embeddings.forEachIndexed { pointIndex, value ->
@@ -820,9 +829,10 @@ class MainView : VerticalLayout() {
         }
     }
 
-    private fun colorForSeries(index: Int): Color {
-        val hue = ((index * 53) % 360) / 360f
-        return Color.getHSBColor(hue, 0.7f, 0.45f)
+    private fun colorForPhase(rawMaskColor: String?): Color {
+        val normalized = normalizeMaskColor(rawMaskColor)?.removePrefix("0x") ?: return Color(58, 115, 193)
+        val rgb = normalized.toIntOrNull(16) ?: return Color(58, 115, 193)
+        return Color((rgb shr 16) and 0xFF, (rgb shr 8) and 0xFF, rgb and 0xFF)
     }
 
     private fun generateNextCollectionName(): String {
