@@ -862,9 +862,18 @@ class MainView : VerticalLayout() {
             graphics.composite = AlphaComposite.SrcOver
             graphics.color = Color(120, 120, 120)
             graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-            val yTicks = yTickValues
+            val yTicksRaw = yTickValues
                 .map { rawValue -> rawValue to (topPadding + normalizedY(rawValue)) }
                 .distinctBy { (_, y) -> y }
+                .sortedBy { (_, y) -> y }
+            val minTickSpacing = graphics.fontMetrics.height + 2
+            val yTicks = mutableListOf<Pair<Double, Int>>()
+            yTicksRaw.forEach { candidate ->
+                val lastY = yTicks.lastOrNull()?.second
+                if (lastY == null || kotlin.math.abs(candidate.second - lastY) >= minTickSpacing) {
+                    yTicks += candidate
+                }
+            }
             yTicks.forEach { (rawValue, y) ->
                 val label = formatYAxisLabel(rawValue)
                 graphics.drawLine(leftPadding - 4, y, leftPadding, y)
