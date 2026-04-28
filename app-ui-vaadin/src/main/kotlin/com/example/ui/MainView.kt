@@ -850,6 +850,20 @@ class MainView : VerticalLayout() {
             val axisY = topPadding + plotHeight - 1
             graphics.drawLine(leftPadding, axisY, width - rightPadding, axisY)
             graphics.drawLine(leftPadding, topPadding, leftPadding, topPadding + plotHeight)
+            graphics.composite = AlphaComposite.SrcOver
+            graphics.color = Color(120, 120, 120)
+            graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            val yTicks = listOf(
+                0 to "1.0",
+                (plotHeight / 2) to "0.5",
+                (plotHeight - 1) to "0.0"
+            )
+            yTicks.forEach { (offset, label) ->
+                val y = topPadding + offset
+                graphics.drawLine(leftPadding - 4, y, leftPadding, y)
+                val labelWidth = graphics.fontMetrics.stringWidth(label)
+                graphics.drawString(label, (leftPadding - 8 - labelWidth).toFloat(), (y + graphics.fontMetrics.ascent / 2f))
+            }
             embeddingColumnNames.forEachIndexed { index, _ ->
                 val x = leftPadding + index * columnWidth + columnWidth / 2
                 graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.08f)
@@ -931,7 +945,7 @@ class MainView : VerticalLayout() {
 
         val columnWidth = (maxLabelWidth / 8).coerceIn(3, 10)
         val valueCount = maxOf(embeddingColumnNames.size, objects.maxOfOrNull { it.embeddings.size } ?: 0)
-        val leftPadding = 32
+        val leftPadding = 64
         val rightPadding = 32
         val topPadding = 32
         val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size * 4)
