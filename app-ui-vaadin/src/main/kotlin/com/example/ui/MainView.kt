@@ -682,13 +682,10 @@ class MainView : VerticalLayout() {
             val normalized = ((value - minValue) / denominator).coerceIn(0.0, 1.0)
             return (chartHeight - (normalized * (chartHeight - 1))).roundToInt().coerceIn(0, chartHeight - 1)
         }
-        val chartBytes = renderEmbeddingsPlotPng(
-            objects = withEmbeddings,
-            embeddingColumnNames = embeddingColumnNames,
-            normalizedY = ::normalizedY
-        )
-        val chartResource = StreamResource("embeddings-${System.currentTimeMillis()}.png") {
-            ByteArrayInputStream(chartBytes)
+        val currentUi = ui.orElse(null)
+        if (currentUi == null) {
+            showError("UI context is not available for chart rendering.")
+            return
         }
         val phaseCounts = withEmbeddings
             .groupingBy { obj -> obj.properties["grain_class"]?.trim().orEmpty().ifBlank { obj.name } }
@@ -726,43 +723,72 @@ class MainView : VerticalLayout() {
             headerTitle = "Embeddings (${withEmbeddings.size} объектов)"
             width = "min(95vw, 1200px)"
             height = "min(90vh, 760px)"
-            add(
-                VerticalLayout(
-                    Paragraph("Нормализация по текущей выборке: min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
-                    Div().apply {
-                        style["overflow"] = "auto"
-                        style["border"] = "1px solid var(--lumo-contrast-20pct)"
-                        style["border-radius"] = "8px"
-                        style["padding"] = "8px"
-                        style["background"] = "white"
-                        setWidthFull()
-                        val chartImage = Image(chartResource, "Embeddings").apply {
-                            setWidthFull()
-                            style["height"] = "auto"
-                            style["display"] = "block"
-                            style["cursor"] = "zoom-in"
-                        }
-                        val chartLink = Anchor(chartResource, "").apply {
-                            setTarget("_blank")
-                            element.setAttribute("title", "Открыть график в новой вкладке")
-                            style["display"] = "block"
-                            setWidthFull()
-                            add(chartImage)
-                        }
-                        add(
-                            chartLink
-                        )
-                    },
-                    legend
-                ).apply {
-                    isPadding = false
-                    isSpacing = true
-                    setWidthFull()
-                }
-            )
         }
+        val chartProgress = ProgressBar().apply {
+            isIndeterminate = true
+            setWidthFull()
+        }
+        val chartHost = Div().apply {
+            style["overflow"] = "auto"
+            style["border"] = "1px solid var(--lumo-contrast-20pct)"
+            style["border-radius"] = "8px"
+            style["padding"] = "32px"
+            style["background"] = "white"
+            setWidthFull()
+            add(Paragraph("Построение графика…"))
+        }
+        dialog.add(
+            VerticalLayout(
+                Paragraph("Нормализация по текущей выборке: min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
+                chartProgress,
+                chartHost,
+                legend
+            ).apply {
+                isPadding = false
+                isSpacing = true
+                setWidthFull()
+            }
+        )
         dialog.footer.add(Button("Закрыть") { dialog.close() })
         dialog.open()
+
+        thread(name = "embeddings-chart-render", isDaemon = true) {
+            val rendered = runCatching {
+                renderEmbeddingsPlotPng(
+                    objects = withEmbeddings,
+                    embeddingColumnNames = embeddingColumnNames,
+                    normalizedY = ::normalizedY
+                )
+            }
+            currentUi.access {
+                if (!dialog.isOpened) return@access
+                chartProgress.isVisible = false
+                val chartBytes = rendered.getOrNull()
+                if (chartBytes == null) {
+                    chartHost.removeAll()
+                    chartHost.add(Paragraph("Не удалось построить график embeddings."))
+                    return@access
+                }
+                val chartResource = StreamResource("embeddings-${System.currentTimeMillis()}.png") {
+                    ByteArrayInputStream(chartBytes)
+                }
+                val chartImage = Image(chartResource, "Embeddings").apply {
+                    setWidthFull()
+                    style["height"] = "auto"
+                    style["display"] = "block"
+                    style["cursor"] = "zoom-in"
+                }
+                val chartLink = Anchor(chartResource, "").apply {
+                    setTarget("_blank")
+                    element.setAttribute("title", "Открыть график в новой вкладке")
+                    style["display"] = "block"
+                    setWidthFull()
+                    add(chartImage)
+                }
+                chartHost.removeAll()
+                chartHost.add(chartLink)
+            }
+        }
     }
 
     private fun renderEmbeddingsPlotPng(
@@ -828,9 +854,11 @@ class MainView : VerticalLayout() {
                 graphics.color = Color(90, 90, 90)
                 graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
                 graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON)
+                val labelWidth = graphics.fontMetrics.stringWidth(rawLabel)
                 val originalTransform = graphics.transform
-                graphics.rotate(-Math.PI / 2, x.toDouble(), y.toDouble())
-                graphics.drawString(rawLabel, x.toFloat(), y.toFloat())
+                graphics.translate(x.toDouble(), y.toDouble())
+                graphics.rotate(-Math.PI / 2)
+                graphics.drawString(rawLabel, -labelWidth / 2f, 0f)
                 graphics.transform = originalTransform
             }
         } finally {
