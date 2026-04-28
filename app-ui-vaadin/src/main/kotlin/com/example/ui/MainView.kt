@@ -673,15 +673,6 @@ class MainView : VerticalLayout() {
             .maxByOrNull { it.size }
             .orEmpty()
         val allValues = withEmbeddings.asSequence().flatMap { it.embeddings.asSequence() }.toList()
-        val minValue = allValues.minOrNull() ?: 0.0
-        val maxValue = allValues.maxOrNull() ?: 0.0
-        val denominator = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
-        val chartHeight = 300
-
-        fun normalizedY(value: Double): Int {
-            val normalized = ((value - minValue) / denominator).coerceIn(0.0, 1.0)
-            return (chartHeight - (normalized * (chartHeight - 1))).roundToInt().coerceIn(0, chartHeight - 1)
-        }
         val plotLayout = calculateEmbeddingsPlotLayout(withEmbeddings, embeddingColumnNames)
         val currentUi = ui.orElse(null)
         if (currentUi == null) {
@@ -723,90 +714,113 @@ class MainView : VerticalLayout() {
         val progressDialog = Dialog().apply {
             headerTitle = "Построение Embeddings…"
             width = "420px"
-            add(
-                VerticalLayout(
-                    Paragraph("Подготавливаем график. Это может занять некоторое время."),
-                    ProgressBar().apply {
-                        isIndeterminate = true
-                        setWidthFull()
-                    }
-                ).apply {
-                    isPadding = false
-                    isSpacing = true
-                    setWidthFull()
-                }
-            )
-            footer.add(Button("Отмена") { close() })
         }
+        val logScaleToggle = Checkbox("Логарифмическая нормализация (sym-log)").apply {
+            value = true
+        }
+        val progressBar = ProgressBar().apply {
+            isIndeterminate = true
+            isVisible = false
+            setWidthFull()
+        }
+        progressDialog.add(
+            VerticalLayout(
+                Paragraph("Подготавливаем график. Выберите режим нормализации и запустите построение."),
+                logScaleToggle,
+                progressBar
+            ).apply {
+                isPadding = false
+                isSpacing = true
+                setWidthFull()
+            }
+        )
+        val buildButton = Button("Построить")
+        buildButton.addClickListener {
+            val useLogScale = logScaleToggle.value
+            logScaleToggle.isEnabled = false
+            buildButton.isEnabled = false
+            progressBar.isVisible = true
+            thread(name = "embeddings-chart-render", isDaemon = true) {
+                val transformedValues = allValues.map { transformEmbeddingValue(it, useLogScale) }
+                val minValue = transformedValues.minOrNull() ?: 0.0
+                val maxValue = transformedValues.maxOrNull() ?: 0.0
+                val denominator = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
+                val chartHeight = 300
+                fun normalizedY(value: Double): Int {
+                    val transformed = transformEmbeddingValue(value, useLogScale)
+                    val normalized = ((transformed - minValue) / denominator).coerceIn(0.0, 1.0)
+                    return (chartHeight - (normalized * (chartHeight - 1))).roundToInt().coerceIn(0, chartHeight - 1)
+                }
+                val rendered = runCatching {
+                    renderEmbeddingsPlotPng(
+                        objects = withEmbeddings,
+                        embeddingColumnNames = embeddingColumnNames,
+                        layout = plotLayout,
+                        normalizedY = ::normalizedY
+                    )
+                }
+                currentUi.access {
+                    if (!progressDialog.isOpened) return@access
+                    progressDialog.close()
+                    val chartBytes = rendered.getOrNull()
+                    if (chartBytes == null) {
+                        showError("Не удалось построить график embeddings.")
+                        return@access
+                    }
+                    val chartResource = StreamResource("embeddings-${System.currentTimeMillis()}.png") {
+                        ByteArrayInputStream(chartBytes)
+                    }
+                    val chartImage = Image(chartResource, "Embeddings").apply {
+                        setWidthFull()
+                        style["height"] = "auto"
+                        style["display"] = "block"
+                        style["cursor"] = "zoom-in"
+                    }
+                    val chartLink = Anchor(chartResource, "").apply {
+                        setTarget("_blank")
+                        element.setAttribute("title", "Открыть график в новой вкладке")
+                        style["display"] = "block"
+                        setWidthFull()
+                        style["box-sizing"] = "border-box"
+                        add(chartImage)
+                    }
+                    val dialog = Dialog().apply {
+                        headerTitle = "Embeddings (${withEmbeddings.size} объектов)"
+                        width = "min(95vw, 1200px)"
+                        height = "90vh"
+                    }
+                    val chartHost = Div().apply {
+                        style["border"] = "1px solid var(--lumo-contrast-20pct)"
+                        style["border-radius"] = "8px"
+                        style["padding"] = "16px"
+                        style["background"] = "white"
+                        style["overflow"] = "hidden"
+                        style["box-sizing"] = "border-box"
+                        setWidthFull()
+                        add(chartLink)
+                    }
+                    chartImage.style["max-height"] = "58vh"
+                    chartImage.style["max-width"] = "100%"
+                    chartImage.style["object-fit"] = "contain"
+                    val modeLabel = if (useLogScale) "Логарифмическая (sym-log)" else "Линейная"
+                    dialog.add(
+                        VerticalLayout(
+                            Paragraph("Нормализация: $modeLabel; min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
+                            chartHost,
+                            legend
+                        ).apply {
+                            isPadding = false
+                            isSpacing = true
+                            setWidthFull()
+                        }
+                    )
+                    dialog.footer.add(Button("Закрыть") { dialog.close() })
+                    dialog.open()
+                }
+            }
+        }
+        progressDialog.footer.add(Button("Отмена") { progressDialog.close() }, buildButton)
         progressDialog.open()
-
-        thread(name = "embeddings-chart-render", isDaemon = true) {
-            val rendered = runCatching {
-                renderEmbeddingsPlotPng(
-                    objects = withEmbeddings,
-                    embeddingColumnNames = embeddingColumnNames,
-                    layout = plotLayout,
-                    normalizedY = ::normalizedY
-                )
-            }
-            currentUi.access {
-                if (!progressDialog.isOpened) return@access
-                progressDialog.close()
-                val chartBytes = rendered.getOrNull()
-                if (chartBytes == null) {
-                    showError("Не удалось построить график embeddings.")
-                    return@access
-                }
-                val chartResource = StreamResource("embeddings-${System.currentTimeMillis()}.png") {
-                    ByteArrayInputStream(chartBytes)
-                }
-                val chartImage = Image(chartResource, "Embeddings").apply {
-                    setWidthFull()
-                    style["height"] = "auto"
-                    style["display"] = "block"
-                    style["cursor"] = "zoom-in"
-                }
-                val chartLink = Anchor(chartResource, "").apply {
-                    setTarget("_blank")
-                    element.setAttribute("title", "Открыть график в новой вкладке")
-                    style["display"] = "block"
-                    setWidthFull()
-                    style["box-sizing"] = "border-box"
-                    add(chartImage)
-                }
-                val dialog = Dialog().apply {
-                    headerTitle = "Embeddings (${withEmbeddings.size} объектов)"
-                    width = "min(95vw, 1200px)"
-                    height = "90vh"
-                }
-                val chartHost = Div().apply {
-                    style["border"] = "1px solid var(--lumo-contrast-20pct)"
-                    style["border-radius"] = "8px"
-                    style["padding"] = "16px"
-                    style["background"] = "white"
-                    style["overflow"] = "hidden"
-                    style["box-sizing"] = "border-box"
-                    setWidthFull()
-                    add(chartLink)
-                }
-                chartImage.style["max-height"] = "58vh"
-                chartImage.style["max-width"] = "100%"
-                chartImage.style["object-fit"] = "contain"
-                dialog.add(
-                    VerticalLayout(
-                        Paragraph("Нормализация по текущей выборке: min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
-                        chartHost,
-                        legend
-                    ).apply {
-                        isPadding = false
-                        isSpacing = true
-                        setWidthFull()
-                    }
-                )
-                dialog.footer.add(Button("Закрыть") { dialog.close() })
-                dialog.open()
-            }
-        }
     }
 
     private fun renderEmbeddingsPlotPng(
@@ -888,6 +902,13 @@ class MainView : VerticalLayout() {
         val normalized = normalizeMaskColor(rawMaskColor)?.removePrefix("0x") ?: return Color(58, 115, 193)
         val rgb = normalized.toIntOrNull(16) ?: return Color(58, 115, 193)
         return Color((rgb shr 16) and 0xFF, (rgb shr 8) and 0xFF, rgb and 0xFF)
+    }
+
+    private fun transformEmbeddingValue(value: Double, useLogScale: Boolean): Double {
+        if (!useLogScale) return value
+        val abs = kotlin.math.abs(value)
+        val signed = kotlin.math.ln1p(abs)
+        return if (value < 0) -signed else signed
     }
 
     private fun calculateEmbeddingsPlotLayout(
