@@ -782,7 +782,7 @@ class MainView : VerticalLayout() {
         val valueCount = maxOf(embeddingColumnNames.size, objects.maxOfOrNull { it.embeddings.size } ?: 0)
         val leftPadding = 2
         val rightPadding = 2
-        val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size / 2).coerceAtMost(maxLabelWidth)
+        val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size * 2).coerceAtMost(maxLabelWidth + font.size)
         val bottomPadding = (maxLabelWidth + chessShift + 4).coerceAtLeast(18)
         val width = (leftPadding + rightPadding + (valueCount.coerceAtLeast(1) * columnWidth)).coerceAtLeast(1)
         val height = plotHeight + bottomPadding
@@ -796,9 +796,10 @@ class MainView : VerticalLayout() {
             graphics.drawLine(leftPadding, plotHeight - 1, width - rightPadding, plotHeight - 1)
             graphics.drawLine(leftPadding, 0, leftPadding, plotHeight)
 
+            val densityAlpha = (1.6f / objects.size.coerceAtLeast(1)).coerceIn(0.12f, 0.85f)
             objects.forEach { obj ->
                 graphics.color = colorForPhase(obj.properties["mask_color_rgb"])
-                graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.08f)
+                graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, densityAlpha)
                 val pointSize = columnWidth.coerceAtLeast(2)
                 obj.embeddings.forEachIndexed { pointIndex, value ->
                     val x = (leftPadding + pointIndex * columnWidth + columnWidth / 2).coerceIn(0, width - 1)
@@ -817,6 +818,9 @@ class MainView : VerticalLayout() {
             embeddingColumnNames.forEachIndexed { index, rawLabel ->
                 val x = leftPadding + index * columnWidth + columnWidth / 2
                 val y = plotHeight + maxLabelWidth + 2 + if (index % 2 == 0) 0 else chessShift
+                graphics.color = Color(190, 190, 190)
+                graphics.drawLine(x, plotHeight - 1, x, y - maxLabelWidth - 2)
+                graphics.color = Color(90, 90, 90)
                 val originalTransform = graphics.transform
                 graphics.rotate(-Math.PI / 2, x.toDouble(), y.toDouble())
                 graphics.drawString(rawLabel, x.toFloat(), y.toFloat())
