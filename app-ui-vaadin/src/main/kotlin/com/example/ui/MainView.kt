@@ -738,7 +738,7 @@ class MainView : VerticalLayout() {
                         setWidthFull()
                         val chartImage = Image(chartResource, "Embeddings").apply {
                             setWidthFull()
-                            height = "${chartHeight}px"
+                            style["height"] = "auto"
                             style["display"] = "block"
                             style["cursor"] = "zoom-in"
                         }
