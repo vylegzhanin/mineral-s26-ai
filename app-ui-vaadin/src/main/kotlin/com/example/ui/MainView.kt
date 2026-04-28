@@ -37,6 +37,7 @@ import com.vaadin.flow.router.Route
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.mvysny.kaributools.addIconItem
 import org.slf4j.LoggerFactory
+import java.awt.AlphaComposite
 import java.awt.Color
 import java.awt.Font
 import java.awt.RenderingHints
@@ -766,11 +767,12 @@ class MainView : VerticalLayout() {
         val maxLabelWidth = embeddingColumnNames.maxOfOrNull { labelGraphics.fontMetrics.stringWidth(it) } ?: 0
         labelGraphics.dispose()
 
-        val columnWidth = (maxLabelWidth / 3).coerceIn(8, 48)
+        val columnWidth = (maxLabelWidth / 6).coerceIn(3, 14)
         val valueCount = maxOf(embeddingColumnNames.size, objects.maxOfOrNull { it.embeddings.size } ?: 0)
-        val leftPadding = 8
-        val rightPadding = 8
-        val bottomPadding = (maxLabelWidth + 10).coerceAtLeast(30)
+        val leftPadding = 2
+        val rightPadding = 2
+        val chessShift = font.size + 2
+        val bottomPadding = (maxLabelWidth + chessShift + 4).coerceAtLeast(18)
         val width = (leftPadding + rightPadding + (valueCount.coerceAtLeast(1) * columnWidth)).coerceAtLeast(1)
         val height = plotHeight + bottomPadding
         val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
@@ -785,17 +787,25 @@ class MainView : VerticalLayout() {
 
             objects.forEachIndexed { index, obj ->
                 graphics.color = colorForSeries(index)
+                graphics.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.08f)
+                val pointSize = columnWidth.coerceAtLeast(2)
                 obj.embeddings.forEachIndexed { pointIndex, value ->
                     val x = (leftPadding + pointIndex * columnWidth + columnWidth / 2).coerceIn(0, width - 1)
                     val y = normalizedY(value)
-                    graphics.fillRect((x - 1).coerceAtLeast(0), (y - 1).coerceAtLeast(0), 3, 3)
+                    graphics.fillRect(
+                        (x - pointSize / 2).coerceAtLeast(0),
+                        (y - pointSize / 2).coerceAtLeast(0),
+                        pointSize,
+                        pointSize
+                    )
                 }
             }
+            graphics.composite = AlphaComposite.SrcOver
             graphics.color = Color(90, 90, 90)
             graphics.font = font
             embeddingColumnNames.forEachIndexed { index, rawLabel ->
                 val x = leftPadding + index * columnWidth + columnWidth / 2
-                val y = plotHeight + maxLabelWidth + 2
+                val y = plotHeight + maxLabelWidth + 2 + if (index % 2 == 0) 0 else chessShift
                 val originalTransform = graphics.transform
                 graphics.rotate(-Math.PI / 2, x.toDouble(), y.toDouble())
                 graphics.drawString(rawLabel, x.toFloat(), y.toFloat())
