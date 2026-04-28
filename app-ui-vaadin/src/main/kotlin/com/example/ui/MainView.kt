@@ -682,6 +682,7 @@ class MainView : VerticalLayout() {
             val normalized = ((value - minValue) / denominator).coerceIn(0.0, 1.0)
             return (chartHeight - (normalized * (chartHeight - 1))).roundToInt().coerceIn(0, chartHeight - 1)
         }
+        val plotLayout = calculateEmbeddingsPlotLayout(withEmbeddings, embeddingColumnNames)
         val currentUi = ui.orElse(null)
         if (currentUi == null) {
             showError("UI context is not available for chart rendering.")
@@ -721,8 +722,8 @@ class MainView : VerticalLayout() {
         }
         val dialog = Dialog().apply {
             headerTitle = "Embeddings (${withEmbeddings.size} объектов)"
-            width = "min(95vw, 1200px)"
-            height = "min(90vh, 760px)"
+            width = "min(95vw, ${plotLayout.width + 160}px)"
+            height = "min(90vh, ${plotLayout.height + 280}px)"
         }
         val chartProgress = ProgressBar().apply {
             isIndeterminate = true
@@ -734,6 +735,7 @@ class MainView : VerticalLayout() {
             style["border-radius"] = "8px"
             style["padding"] = "32px"
             style["background"] = "white"
+            style["min-height"] = "${plotLayout.height + 64}px"
             setWidthFull()
             add(Paragraph("Построение графика…"))
         }
@@ -757,6 +759,7 @@ class MainView : VerticalLayout() {
                 renderEmbeddingsPlotPng(
                     objects = withEmbeddings,
                     embeddingColumnNames = embeddingColumnNames,
+                    layout = plotLayout,
                     normalizedY = ::normalizedY
                 )
             }
@@ -794,25 +797,19 @@ class MainView : VerticalLayout() {
     private fun renderEmbeddingsPlotPng(
         objects: List<DatasetObject>,
         embeddingColumnNames: List<String>,
+        layout: EmbeddingPlotLayout,
         normalizedY: (Double) -> Int
     ): ByteArray {
         val plotHeight = 300
         val font = Font("SansSerif", Font.PLAIN, 14)
-        val labelImage = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB)
-        val labelGraphics = labelImage.createGraphics()
-        labelGraphics.font = font
-        val maxLabelWidth = embeddingColumnNames.maxOfOrNull { labelGraphics.fontMetrics.stringWidth(it) } ?: 0
-        labelGraphics.dispose()
-
-        val columnWidth = (maxLabelWidth / 8).coerceIn(3, 10)
-        val valueCount = maxOf(embeddingColumnNames.size, objects.maxOfOrNull { it.embeddings.size } ?: 0)
-        val leftPadding = 2
-        val rightPadding = 2
-        val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size * 4)
-        val extraRowGap = font.size * 2
-        val bottomPadding = (maxLabelWidth + chessShift + extraRowGap + 4).coerceAtLeast(18)
-        val width = (leftPadding + rightPadding + (valueCount.coerceAtLeast(1) * columnWidth)).coerceAtLeast(1)
-        val height = plotHeight + bottomPadding
+        val maxLabelWidth = layout.maxLabelWidth
+        val columnWidth = layout.columnWidth
+        val leftPadding = layout.leftPadding
+        val rightPadding = layout.rightPadding
+        val chessShift = layout.chessShift
+        val extraRowGap = layout.extraRowGap
+        val width = layout.width
+        val height = layout.height
         val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
         val graphics = image.createGraphics()
         try {
@@ -854,11 +851,11 @@ class MainView : VerticalLayout() {
                 graphics.color = Color(90, 90, 90)
                 graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
                 graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON)
-                val labelWidth = graphics.fontMetrics.stringWidth(rawLabel)
+                val axisCenterOffset = graphics.fontMetrics.height / 2f
                 val originalTransform = graphics.transform
                 graphics.translate(x.toDouble(), y.toDouble())
                 graphics.rotate(-Math.PI / 2)
-                graphics.drawString(rawLabel, -labelWidth / 2f, 0f)
+                graphics.drawString(rawLabel, -axisCenterOffset, 0f)
                 graphics.transform = originalTransform
             }
         } finally {
@@ -874,6 +871,39 @@ class MainView : VerticalLayout() {
         val normalized = normalizeMaskColor(rawMaskColor)?.removePrefix("0x") ?: return Color(58, 115, 193)
         val rgb = normalized.toIntOrNull(16) ?: return Color(58, 115, 193)
         return Color((rgb shr 16) and 0xFF, (rgb shr 8) and 0xFF, rgb and 0xFF)
+    }
+
+    private fun calculateEmbeddingsPlotLayout(
+        objects: List<DatasetObject>,
+        embeddingColumnNames: List<String>
+    ): EmbeddingPlotLayout {
+        val font = Font("SansSerif", Font.PLAIN, 14)
+        val metricsImage = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB)
+        val metricsGraphics = metricsImage.createGraphics()
+        metricsGraphics.font = font
+        val maxLabelWidth = embeddingColumnNames.maxOfOrNull { metricsGraphics.fontMetrics.stringWidth(it) } ?: 0
+        metricsGraphics.dispose()
+
+        val columnWidth = (maxLabelWidth / 8).coerceIn(3, 10)
+        val valueCount = maxOf(embeddingColumnNames.size, objects.maxOfOrNull { it.embeddings.size } ?: 0)
+        val leftPadding = 2
+        val rightPadding = 2
+        val chessShift = (maxLabelWidth - columnWidth).coerceAtLeast(font.size * 4)
+        val extraRowGap = font.size * 2
+        val bottomPadding = (maxLabelWidth + chessShift + extraRowGap + 4).coerceAtLeast(18)
+        val width = (leftPadding + rightPadding + (valueCount.coerceAtLeast(1) * columnWidth)).coerceAtLeast(1)
+        val height = 300 + bottomPadding
+
+        return EmbeddingPlotLayout(
+            width = width,
+            height = height,
+            maxLabelWidth = maxLabelWidth,
+            columnWidth = columnWidth,
+            leftPadding = leftPadding,
+            rightPadding = rightPadding,
+            chessShift = chessShift,
+            extraRowGap = extraRowGap
+        )
     }
 
     private fun generateNextCollectionName(): String {
@@ -3872,6 +3902,17 @@ private data class ParsedEmbeddingsCsv(
         )
     }
 }
+
+private data class EmbeddingPlotLayout(
+    val width: Int,
+    val height: Int,
+    val maxLabelWidth: Int,
+    val columnWidth: Int,
+    val leftPadding: Int,
+    val rightPadding: Int,
+    val chessShift: Int,
+    val extraRowGap: Int
+)
 
 private data class ObjectClassInfo(
     val grainClass: String,
