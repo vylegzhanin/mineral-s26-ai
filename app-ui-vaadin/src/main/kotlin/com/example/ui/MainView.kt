@@ -720,42 +720,25 @@ class MainView : VerticalLayout() {
                 )
             }
         }
-        val dialog = Dialog().apply {
-            headerTitle = "Embeddings (${withEmbeddings.size} объектов)"
-            width = "min(95vw, 1200px)"
-            height = "90vh"
+        val progressDialog = Dialog().apply {
+            headerTitle = "Построение Embeddings…"
+            width = "420px"
+            add(
+                VerticalLayout(
+                    Paragraph("Подготавливаем график. Это может занять некоторое время."),
+                    ProgressBar().apply {
+                        isIndeterminate = true
+                        setWidthFull()
+                    }
+                ).apply {
+                    isPadding = false
+                    isSpacing = true
+                    setWidthFull()
+                }
+            )
+            footer.add(Button("Отмена") { close() })
         }
-        val chartProgress = ProgressBar().apply {
-            isIndeterminate = true
-            setWidthFull()
-        }
-        val chartHost = Div().apply {
-            style["overflow"] = "auto"
-            style["border"] = "1px solid var(--lumo-contrast-20pct)"
-            style["border-radius"] = "8px"
-            style["padding"] = "32px"
-            style["background"] = "white"
-            style["height"] = "100%"
-            style["min-height"] = "0"
-            setWidthFull()
-            add(Paragraph("Построение графика…"))
-        }
-        val dialogContent = VerticalLayout(
-            Paragraph("Нормализация по текущей выборке: min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
-            chartProgress,
-            chartHost,
-            legend
-        ).apply {
-            isPadding = false
-            isSpacing = true
-            setSizeFull()
-            style["overflow"] = "hidden"
-            style["min-height"] = "0"
-            expand(chartHost)
-        }
-        dialog.add(dialogContent)
-        dialog.footer.add(Button("Закрыть") { dialog.close() })
-        dialog.open()
+        progressDialog.open()
 
         thread(name = "embeddings-chart-render", isDaemon = true) {
             val rendered = runCatching {
@@ -767,12 +750,11 @@ class MainView : VerticalLayout() {
                 )
             }
             currentUi.access {
-                if (!dialog.isOpened) return@access
-                chartProgress.isVisible = false
+                if (!progressDialog.isOpened) return@access
+                progressDialog.close()
                 val chartBytes = rendered.getOrNull()
                 if (chartBytes == null) {
-                    chartHost.removeAll()
-                    chartHost.add(Paragraph("Не удалось построить график embeddings."))
+                    showError("Не удалось построить график embeddings.")
                     return@access
                 }
                 val chartResource = StreamResource("embeddings-${System.currentTimeMillis()}.png") {
@@ -791,8 +773,35 @@ class MainView : VerticalLayout() {
                     setWidthFull()
                     add(chartImage)
                 }
-                chartHost.removeAll()
-                chartHost.add(chartLink)
+                val dialog = Dialog().apply {
+                    headerTitle = "Embeddings (${withEmbeddings.size} объектов)"
+                    width = "min(95vw, 1200px)"
+                    height = "90vh"
+                }
+                val chartHost = Div().apply {
+                    style["border"] = "1px solid var(--lumo-contrast-20pct)"
+                    style["border-radius"] = "8px"
+                    style["padding"] = "16px"
+                    style["background"] = "white"
+                    setWidthFull()
+                    add(chartLink)
+                }
+                chartImage.setWidthFull()
+                chartImage.style["max-height"] = "58vh"
+                chartImage.style["object-fit"] = "contain"
+                dialog.add(
+                    VerticalLayout(
+                        Paragraph("Нормализация по текущей выборке: min=${"%.6f".format(Locale.US, minValue)}, max=${"%.6f".format(Locale.US, maxValue)}."),
+                        chartHost,
+                        legend
+                    ).apply {
+                        isPadding = false
+                        isSpacing = true
+                        setWidthFull()
+                    }
+                )
+                dialog.footer.add(Button("Закрыть") { dialog.close() })
+                dialog.open()
             }
         }
     }
