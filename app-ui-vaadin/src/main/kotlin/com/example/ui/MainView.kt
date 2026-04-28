@@ -742,6 +742,8 @@ class MainView : VerticalLayout() {
             progressBar.isVisible = true
             thread(name = "embeddings-chart-render", isDaemon = true) {
                 val transformedValues = allValues.map { transformEmbeddingValue(it, useLogScale) }
+                val rawMinValue = allValues.minOrNull() ?: 0.0
+                val rawMaxValue = allValues.maxOrNull() ?: 0.0
                 val minValue = transformedValues.minOrNull() ?: 0.0
                 val maxValue = transformedValues.maxOrNull() ?: 0.0
                 val denominator = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
@@ -751,11 +753,17 @@ class MainView : VerticalLayout() {
                     val normalized = ((transformed - minValue) / denominator).coerceIn(0.0, 1.0)
                     return (chartHeight - (normalized * (chartHeight - 1))).roundToInt().coerceIn(0, chartHeight - 1)
                 }
+                val yTickValues = if (rawMaxValue == rawMinValue) {
+                    listOf(rawMinValue)
+                } else {
+                    (0..4).map { index -> rawMinValue + (rawMaxValue - rawMinValue) * index.toDouble() / 4.0 }
+                }
                 val rendered = runCatching {
                     renderEmbeddingsPlotPng(
                         objects = withEmbeddings,
                         embeddingColumnNames = embeddingColumnNames,
                         layout = plotLayout,
+                        yTickValues = yTickValues,
                         normalizedY = ::normalizedY
                     )
                 }
@@ -827,6 +835,7 @@ class MainView : VerticalLayout() {
         objects: List<DatasetObject>,
         embeddingColumnNames: List<String>,
         layout: EmbeddingPlotLayout,
+        yTickValues: List<Double>,
         normalizedY: (Double) -> Int
     ): ByteArray {
         val plotHeight = 300
@@ -853,13 +862,11 @@ class MainView : VerticalLayout() {
             graphics.composite = AlphaComposite.SrcOver
             graphics.color = Color(120, 120, 120)
             graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-            val yTicks = listOf(
-                0 to "1.0",
-                (plotHeight / 2) to "0.5",
-                (plotHeight - 1) to "0.0"
-            )
-            yTicks.forEach { (offset, label) ->
-                val y = topPadding + offset
+            val yTicks = yTickValues
+                .map { rawValue -> rawValue to (topPadding + normalizedY(rawValue)) }
+                .distinctBy { (_, y) -> y }
+            yTicks.forEach { (rawValue, y) ->
+                val label = formatYAxisLabel(rawValue)
                 graphics.drawLine(leftPadding - 4, y, leftPadding, y)
                 val labelWidth = graphics.fontMetrics.stringWidth(label)
                 graphics.drawString(label, (leftPadding - 8 - labelWidth).toFloat(), (y + graphics.fontMetrics.ascent / 2f))
@@ -931,6 +938,14 @@ class MainView : VerticalLayout() {
         val signed = kotlin.math.ln1p(abs)
         return if (value < 0) -signed else signed
     }
+
+    private fun formatYAxisLabel(value: Double): String =
+        when {
+            value == 0.0 -> "0"
+            kotlin.math.abs(value) >= 1000 || kotlin.math.abs(value) < 0.01 ->
+                "%.2e".format(Locale.US, value)
+            else -> "%.3f".format(Locale.US, value)
+        }
 
     private fun calculateEmbeddingsPlotLayout(
         objects: List<DatasetObject>,
